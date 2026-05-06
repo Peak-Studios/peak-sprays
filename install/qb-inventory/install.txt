@@ -1,0 +1,65 @@
+INSTALLATION GUIDE
+
+This guide explains how to install the spraycloth and spraypaint items.
+
+---
+
+1. ADD ITEMS
+
+Open your framework's items file.
+
+Common location:
+qb-core/shared/items.lua
+
+If you are using qbx_core, the file is usually located at:
+qbx_core/shared/items.lua
+
+Add the following items to the items table:
+
+spraycloth = {
+    name = 'spraycloth',
+    label = 'Spray Cloth',
+    weight = 200,
+    type = 'item',
+    image = 'spraycloth.png',
+    unique = false,
+    useable = false,
+    shouldClose = true,
+    description = 'A cloth used to wipe or clean spray paint.'
+},
+
+spraypaint = {
+    name = 'spraypaint',
+    label = 'Spray Paint',
+    weight = 500,
+    type = 'item',
+    image = 'spraypaint.png',
+    unique = false,
+    useable = true,
+    shouldClose = true,
+    description = 'A spray paint can used to paint surfaces.'
+},
+
+---
+
+2. ADD ITEM IMAGES
+
+Navigate to the following folder inside the resource:
+
+peak-sprays/install/inventory_images
+
+Copy the images from this folder and place them inside your inventory image directory.
+
+Example:
+qb-inventory/html/images/
+
+Make sure the following files are copied:
+
+spraycloth.png
+spraypaint.png
+
+---
+
+3. RESTART
+
+Restart your server or restart the necessary resources to apply the changes.
