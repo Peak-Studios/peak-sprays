@@ -1,20 +1,20 @@
-INSTALLATION GUIDE
+QB/QBX INVENTORY INSTALLATION
 
-This guide explains how to install the spraycloth and spraypaint items.
+Use this guide to register the `spraycloth` and `spraypaint` items for qb-inventory or qbx_core setups.
 
 ---
 
-1. ADD ITEMS
+1. REGISTER THE ITEMS
 
-Open your framework's items file.
+Open your framework item file.
 
 Common location:
 qb-core/shared/items.lua
 
-If you are using qbx_core, the file is usually located at:
+For qbx_core, the common location is:
 qbx_core/shared/items.lua
 
-Add the following items to the items table:
+Add these entries inside the items table:
 
 spraycloth = {
     name = 'spraycloth',
@@ -42,24 +42,24 @@ spraypaint = {
 
 ---
 
-2. ADD ITEM IMAGES
+2. INSTALL THE ITEM IMAGES
 
-Navigate to the following folder inside the resource:
+Open the image folder included with this resource:
 
 peak-sprays/install/inventory_images
 
-Copy the images from this folder and place them inside your inventory image directory.
-
-Example:
-qb-inventory/html/images/
-
-Make sure the following files are copied:
+Copy these files:
 
 spraycloth.png
 spraypaint.png
 
+Paste them into your inventory image directory.
+
+Example:
+qb-inventory/html/images/
+
 ---
 
-3. RESTART
+3. RESTART RESOURCES
 
-Restart your server or restart the necessary resources to apply the changes.
+Restart qb-core or qbx_core, restart your inventory resource, or restart the server so the new item data and images are loaded.

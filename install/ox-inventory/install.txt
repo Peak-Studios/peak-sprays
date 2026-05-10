@@ -1,17 +1,16 @@
-INSTALLATION GUIDE (OX_INVENTORY)
+OX_INVENTORY INSTALLATION
 
-This guide explains how to install the spraycloth and spraypaint items for **ox_inventory**.
+Use this guide to register the `spraycloth` and `spraypaint` items for ox_inventory.
 
 ---
 
-1. ADD ITEMS
+1. REGISTER THE ITEMS
 
-Open the ox_inventory items file.
+Open the ox_inventory item data file:
 
-Location:
 ox_inventory/data/items.lua
 
-Add the following items to the items table:
+Add these entries inside the items table:
 
 ['spraycloth'] = {
     label = 'Spray Cloth',
@@ -31,23 +30,23 @@ Add the following items to the items table:
 
 ---
 
-2. ADD ITEM IMAGES
+2. INSTALL THE ITEM IMAGES
 
-Navigate to the following folder inside the resource:
+Open the image folder included with this resource:
 
 peak-sprays/install/inventory_images
 
-Copy the images from this folder and place them into:
-
-ox_inventory/web/images
-
-Make sure the following files are copied:
+Copy these files:
 
 spraycloth.png
 spraypaint.png
 
+Paste them into the ox_inventory image directory:
+
+ox_inventory/web/images
+
 ---
 
-3. RESTART
+3. RESTART RESOURCES
 
-Restart your server or restart ox_inventory to apply the changes.
+Restart ox_inventory, or restart the server, so the new item data and images are loaded.
