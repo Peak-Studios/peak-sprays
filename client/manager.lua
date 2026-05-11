@@ -31,7 +31,9 @@ SprayState = {
     paintingId = nil,
     targetPaintingCorners = nil,
     targetPaintingRight = nil,
-    targetPaintingUp = nil
+    targetPaintingUp = nil,
+    pendingValidate = false,
+    pendingCancel = false,
 }
 
 KnownPaintings = {}
@@ -44,7 +46,7 @@ CreateThread(function()
     while not Peak.Client or not Peak.Client.Ready do
         Wait(500)
     end
-    
+
     local paintings = Peak.Client.TriggerCallback("peak-sprays:getPaintings")
     if paintings then
         for _, p in ipairs(paintings) do
@@ -74,11 +76,11 @@ end)
 if Config.UseItem then
     RegisterNetEvent("peak-sprays:useSprayPaint", function(itemName)
         if SprayState.mode ~= "idle" then return end
-        
+
         local color = Config.ColoredItems[itemName]
         StartSelectionMode(color)
     end)
-    
+
     RegisterNetEvent("peak-sprays:useCloth", function()
         if SprayState.mode ~= "idle" then return end
         StartEraserMode()
@@ -88,17 +90,17 @@ end
 if Config.UseCommand then
     RegisterCommand(Config.CommandName, function()
         if SprayState.mode ~= "idle" then return end
-        
+
         if not Peak.Client.TriggerCallback("peak-sprays:hasSprayItem") then
             Peak.Client.Notify(L("no_item"), "error", Config.NotifyDuration)
             return
         end
         StartSelectionMode(nil)
     end, false)
-    
+
     RegisterCommand(Config.EraseCommandName, function()
         if SprayState.mode ~= "idle" then return end
-        
+
         if not Peak.Client.TriggerCallback("peak-sprays:hasClothItem") then
             Peak.Client.Notify(L("no_cloth"), "error", Config.NotifyDuration)
             return
@@ -118,9 +120,9 @@ function StartSelectionMode(forcedColor)
         SprayUtils.DebugPrint("[Spray] CanSpray() returned false, blocking spray")
         return
     end
-    
+
     SprayUtils.DebugPrint("[Selection] Starting selection mode, forcedColor:", tostring(forcedColor))
-    
+
     SprayState.mode = "selecting"
     SprayState.corner1 = nil
     SprayState.corner2 = nil
@@ -128,10 +130,10 @@ function StartSelectionMode(forcedColor)
     SprayState.forcedColor = forcedColor
     SprayState.currentColor = forcedColor or Config.DefaultColor
     SprayState.brushIndex = Config.DefaultBrushSizeIndex
-    
+
     SetFollowPedCamViewMode(4)
     Peak.Client.Notify(L("select_first_corner"), "info", Config.NotifyDuration)
-    
+
     CreateThread(SelectionLoop)
 end
 
@@ -139,31 +141,31 @@ function SelectionLoop()
     local selectionStep = 1
     local activeNormal = nil
     local isControlPressed = false
-    
+
     while SprayState.mode == "selecting" do
         Wait(0)
         local ped = PlayerPedId()
-        
+
         SetFollowPedCamViewMode(4)
-        
+
         -- Disable controls
         for _, control in ipairs({0, 24, 25, 47, 58, 140, 141, 142, 257, 263, 264}) do
             DisableControlAction(0, control, true)
         end
         DisablePlayerFiring(ped, true)
-        
+
         local hit, hitCoords, normal, _ = RaycastModule.FromCamera(Config.SelectionMaxDistance)
         if hit then
             RaycastModule.DrawCrosshair(hitCoords, 255, 255, 255)
-            
+
             if selectionStep == 2 and SprayState.corner1 then
                 local rect, right, up = RaycastModule.ComputeRectangle(SprayState.corner1, hitCoords, activeNormal)
                 RaycastModule.DrawRectOutline(rect, 255, 0, 0, 200)
             end
-            
+
             if IsDisabledControlJustPressed(0, Config.Keys.SelectCorner) and not isControlPressed then
                 isControlPressed = true
-                
+
                 if SprayUtils.IsInBlacklistedZone(hitCoords) then
                     Peak.Client.Notify(L("blacklisted_zone"), "error", Config.NotifyDuration)
                 elseif selectionStep == 1 then
@@ -176,10 +178,10 @@ function SelectionLoop()
                 elseif selectionStep == 2 then
                     SprayState.corner2 = hitCoords
                     local rect, right, up = RaycastModule.ComputeRectangle(SprayState.corner1, SprayState.corner2, activeNormal)
-                    
+
                     local width = #(rect.bottomRight - rect.bottomLeft)
                     local height = #(rect.topLeft - rect.bottomLeft)
-                    
+
                     if width < Config.MinPaintAreaSize or height < Config.MinPaintAreaSize then
                         Peak.Client.Notify(L("area_too_small"), "error", Config.NotifyDuration)
                         selectionStep = 1
@@ -201,19 +203,20 @@ function SelectionLoop()
                     end
                 end
             end
-            
+
             if not IsDisabledControlPressed(0, Config.Keys.SelectCorner) then
                 isControlPressed = false
             end
         else
             isControlPressed = false
         end
-        
-        if IsDisabledControlJustPressed(0, Config.Keys.CancelSelection) then
+
+        if SprayState.pendingCancel then
+            SprayState.pendingCancel = false
             CancelSelection()
             return
         end
-        
+
         if SprayState.corner1 and selectionStep == 2 then
             RaycastModule.DrawCrosshair(SprayState.corner1, 0, 255, 0)
         end
@@ -236,7 +239,7 @@ end
 function AttachSprayCanProp()
     local ped = PlayerPedId()
     Peak.Client.LoadModel(Config.SprayCanProp)
-    
+
     local hash = GetHashKey(Config.SprayCanProp)
     local obj = CreateObject(hash, 0.0, 0.0, 0.0, true, true, false)
     -- Attachment for spray can (pointing towards the wall)
@@ -249,7 +252,7 @@ end
 function AttachClothProp()
     local ped = PlayerPedId()
     Peak.Client.LoadModel(Config.ClothProp)
-    
+
     local hash = GetHashKey(Config.ClothProp)
     local obj = CreateObject(hash, 0.0, 0.0, 0.0, true, true, false)
     AttachEntityToEntity(obj, ped, GetPedBoneIndex(ped, 28422), 0.0, 0.0022, -0.0227, 0.0, 180.0, 0.0, true, true, false, true, 1, true)
@@ -276,12 +279,12 @@ function FullCleanup()
     StopSpraySound()
     DetachProp()
     ClearPedTasks(PlayerPedId())
-    
+
     if SprayState.duiObject then
         DestroyDui(SprayState.duiObject)
         SprayState.duiObject = nil
     end
-    
+
     SprayState.mode = "idle"
     SprayState.corner1 = nil
     SprayState.corner2 = nil
@@ -299,7 +302,9 @@ function FullCleanup()
     SprayState.targetPaintingCorners = nil
     SprayState.targetPaintingRight = nil
     SprayState.targetPaintingUp = nil
-    
+    SprayState.pendingValidate = false
+    SprayState.pendingCancel = false
+
     SetNuiFocus(false, false)
     SprayState._nuiMouseActive = false
     SendNUIMessage({ action = "closeHUD" })
@@ -353,4 +358,107 @@ AddEventHandler("onResourceStop", function(resourceName)
     for _, p in pairs(KnownPaintings) do
         if p.duiObj then DestroyDui(p.duiObj) end
     end
+end)
+
+-- ============================================================
+-- NUI CALLBACKS
+-- Handle fetchNui() calls from the Vue HUD
+-- ============================================================
+
+RegisterNUICallback("releaseMouse", function(_, cb)
+    if SprayState._nuiMouseActive then
+        SetNuiFocus(false, false)
+        SprayState._nuiMouseActive = false
+    end
+    cb("ok")
+end)
+
+RegisterNUICallback("confirmSpray", function(_, cb)
+    if SprayState._nuiMouseActive then
+        SetNuiFocus(false, false)
+        SprayState._nuiMouseActive = false
+    end
+    if SprayState.mode == "painting" then
+        ValidatePainting()
+    elseif SprayState.mode == "erasing" then
+        ValidateErase()
+    end
+    cb("ok")
+end)
+
+RegisterNUICallback("cancelSpray", function(_, cb)
+    if SprayState._nuiMouseActive then
+        SetNuiFocus(false, false)
+        SprayState._nuiMouseActive = false
+    end
+    if SprayState.mode == "painting" then
+        CancelPainting()
+    elseif SprayState.mode == "erasing" then
+        CancelErase()
+    elseif SprayState.mode == "selecting" then
+        CancelSelection()
+    end
+    cb("ok")
+end)
+
+RegisterNUICallback("changeColor", function(data, cb)
+    if data and data.color and not SprayState.forcedColor then
+        SprayState.currentColor = data.color
+    end
+    cb("ok")
+end)
+
+RegisterNUICallback("changeDensity", function(data, cb)
+    if data and data.density then
+        SprayState.density = SprayUtils.Clamp(tonumber(data.density) or 0.7, 0.0, 1.0)
+    end
+    cb("ok")
+end)
+
+RegisterNUICallback("uiExportPainting", function(_, cb)
+    if SprayState.mode == "painting" and SprayState.strokeHistory and #SprayState.strokeHistory > 0 then
+        local result = Peak.Client.TriggerCallback("peak-sprays:exportCurrentStrokes", {
+            strokeData    = SprayState.strokeHistory,
+            canvasWidth   = SprayState.canvasWidth or Config.CanvasWidth,
+            canvasHeight  = SprayState.canvasHeight or Config.CanvasHeight,
+        })
+        if result and result.success and result.code then
+            SendNUIMessage({ action = "exportResult", code = result.code })
+            SendNUIMessage({ action = "copyToClipboard", text = result.code })
+        end
+    end
+    cb("ok")
+end)
+
+RegisterNUICallback("uiImportPainting", function(data, cb)
+    if SprayState.mode == "painting" and data and data.code and SprayState.duiObject then
+        local result = Peak.Client.TriggerCallback("peak-sprays:importPainting", data.code)
+        if result and result.success and result.strokeData then
+            SendDuiMessage(SprayState.duiObject, json.encode({ action = "clear" }))
+            SendDuiMessage(SprayState.duiObject, json.encode({
+                action  = "loadStrokes",
+                strokes = result.strokeData,
+            }))
+            SprayState.strokeHistory = result.strokeData
+            SprayState.strokeCount   = #result.strokeData
+            SprayState.totalPoints   = 0
+            for _, s in ipairs(SprayState.strokeHistory) do
+                SprayState.totalPoints = SprayState.totalPoints + ((s.points and #s.points) or 0)
+            end
+            SendNUIMessage({
+                action      = "strokeUpdate",
+                strokeCount = SprayState.strokeCount,
+                maxStrokes  = Config.MaxStrokesPerPainting,
+                canUndo     = #SprayState.strokeHistory > 0,
+                canRedo     = false,
+            })
+        else
+            Peak.Client.Notify((result and result.message) or "Invalid import code", "error", Config.NotifyDuration)
+        end
+    end
+    cb("ok")
+end)
+
+RegisterNUICallback("copyResult", function(_, cb)
+    cb("ok")
 end)

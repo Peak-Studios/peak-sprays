@@ -240,12 +240,15 @@ function PaintingInputLoop()
             end
         end
 
-        if IsControlJustPressed(0, 191) then -- Enter
+        if SprayState.pendingValidate then
+            SprayState.pendingValidate = false
+            SprayState.pendingCancel = false
             ValidatePainting()
             return
         end
 
-        if IsControlJustPressed(0, 178) then -- Delete/Cancel
+        if SprayState.pendingCancel then
+            SprayState.pendingCancel = false
             CancelPainting()
             return
         end
@@ -708,6 +711,31 @@ RegisterCommand("+spray_redo", function()
     end
 end, false)
 RegisterKeyMapping("+spray_redo", "Spray Paint: Redo", "keyboard", "y")
+
+RegisterCommand("+spray_validate", function()
+    if SprayState.mode == "painting" or SprayState.mode == "erasing" then
+        SprayState.pendingValidate = true
+    end
+end, false)
+RegisterKeyMapping("+spray_validate", "Spray Paint: Save / Validate", "keyboard", "RETURN")
+
+RegisterCommand("+spray_cancel", function()
+    if SprayState.mode == "painting"
+    or SprayState.mode == "erasing"
+    or SprayState.mode == "selecting" then
+        SprayState.pendingCancel = true
+    end
+end, false)
+RegisterKeyMapping("+spray_cancel", "Spray Paint: Cancel", "keyboard", "DELETE")
+
+RegisterCommand("+spray_cancel_alt", function()
+    if SprayState.mode == "painting"
+    or SprayState.mode == "erasing"
+    or SprayState.mode == "selecting" then
+        SprayState.pendingCancel = true
+    end
+end, false)
+RegisterKeyMapping("+spray_cancel_alt", "Spray Paint: Cancel (Backspace)", "keyboard", "BACK")
 
 -- ============================================================
 -- ANIMATIONS

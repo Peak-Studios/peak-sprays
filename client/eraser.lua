@@ -241,12 +241,15 @@ function EraserInputLoop()
             end
         end
 
-        if IsDisabledControlJustPressed(0, Config.Keys.ValidateErase) then
+        if SprayState.pendingValidate then
+            SprayState.pendingValidate = false
+            SprayState.pendingCancel = false
             ValidateErase()
             return
         end
 
-        if IsDisabledControlJustPressed(0, Config.Keys.CancelErase) then
+        if SprayState.pendingCancel then
+            SprayState.pendingCancel = false
             CancelErase()
             return
         end
