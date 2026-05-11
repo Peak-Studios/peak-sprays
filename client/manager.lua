@@ -306,6 +306,7 @@ function FullCleanup()
     SprayState.pendingCancel = false
 
     SetNuiFocus(false, false)
+    SetNuiFocusKeepInput(false)
     SprayState._nuiMouseActive = false
     SendNUIMessage({ action = "closeHUD" })
 end
@@ -368,6 +369,7 @@ end)
 RegisterNUICallback("releaseMouse", function(_, cb)
     if SprayState._nuiMouseActive then
         SetNuiFocus(false, false)
+        SetNuiFocusKeepInput(false)
         SprayState._nuiMouseActive = false
     end
     cb("ok")
@@ -376,6 +378,7 @@ end)
 RegisterNUICallback("confirmSpray", function(_, cb)
     if SprayState._nuiMouseActive then
         SetNuiFocus(false, false)
+        SetNuiFocusKeepInput(false)
         SprayState._nuiMouseActive = false
     end
     if SprayState.mode == "painting" then
@@ -389,6 +392,7 @@ end)
 RegisterNUICallback("cancelSpray", function(_, cb)
     if SprayState._nuiMouseActive then
         SetNuiFocus(false, false)
+        SetNuiFocusKeepInput(false)
         SprayState._nuiMouseActive = false
     end
     if SprayState.mode == "painting" then

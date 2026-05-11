@@ -204,39 +204,46 @@ function PaintingInputLoop()
         Wait(0)
         local time = GetGameTimer()
 
-        if IsDisabledControlPressed(0, 24) then
-            HandlePaintInput(time)
-        else
-            if SprayState.isDrawing and not SprayState._eraseMode then
-                EndCurrentStroke()
-            end
-        end
-
-        if IsDisabledControlPressed(0, 25) then
-            HandleEraseInput(time)
-        else
-            if SprayState.isDrawing and SprayState._eraseMode then
-                EndCurrentStroke()
-                SprayState._eraseMode = false
-            end
-        end
-
-        if IsControlJustPressed(0, 241) then -- Scroll Up
-            CycleBrushSize(1)
-        elseif IsControlJustPressed(0, 242) then -- Scroll Down
-            CycleBrushSize(-1)
-        end
-
-        if IsDisabledControlJustPressed(0, Config.Keys.MoveForward) then
-            MoveDuiSurface(Config.PositionStepSize)
-        elseif IsDisabledControlJustPressed(0, Config.Keys.MoveBackward) then
-            MoveDuiSurface(-Config.PositionStepSize)
-        end
-
         if IsDisabledControlJustPressed(0, Config.Keys.ToggleMouse) then
             if GetGameTimer() - (SprayState.lastMouseToggleTime or 0) > 300 then
                 ToggleNuiMouse()
                 SprayState.lastMouseToggleTime = GetGameTimer()
+            end
+        end
+
+        if SprayState._nuiMouseActive then
+            if SprayState.isDrawing then
+                EndCurrentStroke()
+                SprayState._eraseMode = false
+            end
+        else
+            if IsDisabledControlPressed(0, 24) then
+                HandlePaintInput(time)
+            else
+                if SprayState.isDrawing and not SprayState._eraseMode then
+                    EndCurrentStroke()
+                end
+            end
+
+            if IsDisabledControlPressed(0, 25) then
+                HandleEraseInput(time)
+            else
+                if SprayState.isDrawing and SprayState._eraseMode then
+                    EndCurrentStroke()
+                    SprayState._eraseMode = false
+                end
+            end
+
+            if IsControlJustPressed(0, 241) then -- Scroll Up
+                CycleBrushSize(1)
+            elseif IsControlJustPressed(0, 242) then -- Scroll Down
+                CycleBrushSize(-1)
+            end
+
+            if IsDisabledControlJustPressed(0, Config.Keys.MoveForward) then
+                MoveDuiSurface(Config.PositionStepSize)
+            elseif IsDisabledControlJustPressed(0, Config.Keys.MoveBackward) then
+                MoveDuiSurface(-Config.PositionStepSize)
             end
         end
 
@@ -640,9 +647,11 @@ SprayState._nuiMouseActive = false
 function ToggleNuiMouse()
     if SprayState._nuiMouseActive then
         SetNuiFocus(false, false)
+        SetNuiFocusKeepInput(false)
         SprayState._nuiMouseActive = false
     else
         SetNuiFocus(true, true)
+        SetNuiFocusKeepInput(true)
         SprayState._nuiMouseActive = true
     end
 end
@@ -692,27 +701,28 @@ end
 -- ============================================================
 
 RegisterCommand("+spray_shake", function()
-    if SprayState.mode == "painting" then
+    if SprayState.mode == "painting" and not SprayState._nuiMouseActive then
         PlayShakeAnimation()
     end
 end, false)
 RegisterKeyMapping("+spray_shake", "Spray Paint: Shake Can", "keyboard", "g")
 
 RegisterCommand("+spray_undo", function()
-    if SprayState.mode == "painting" then
+    if SprayState.mode == "painting" and not SprayState._nuiMouseActive then
         PerformUndo()
     end
 end, false)
 RegisterKeyMapping("+spray_undo", "Spray Paint: Undo", "keyboard", "z")
 
 RegisterCommand("+spray_redo", function()
-    if SprayState.mode == "painting" then
+    if SprayState.mode == "painting" and not SprayState._nuiMouseActive then
         PerformRedo()
     end
 end, false)
 RegisterKeyMapping("+spray_redo", "Spray Paint: Redo", "keyboard", "y")
 
 RegisterCommand("+spray_validate", function()
+    if SprayState._nuiMouseActive then return end
     if SprayState.mode == "painting" or SprayState.mode == "erasing" then
         SprayState.pendingValidate = true
     end
@@ -720,6 +730,7 @@ end, false)
 RegisterKeyMapping("+spray_validate", "Spray Paint: Save / Validate", "keyboard", "RETURN")
 
 RegisterCommand("+spray_cancel", function()
+    if SprayState._nuiMouseActive then return end
     if SprayState.mode == "painting"
     or SprayState.mode == "erasing"
     or SprayState.mode == "selecting" then
@@ -729,6 +740,7 @@ end, false)
 RegisterKeyMapping("+spray_cancel", "Spray Paint: Cancel", "keyboard", "DELETE")
 
 RegisterCommand("+spray_cancel_alt", function()
+    if SprayState._nuiMouseActive then return end
     if SprayState.mode == "painting"
     or SprayState.mode == "erasing"
     or SprayState.mode == "selecting" then
