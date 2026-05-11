@@ -252,7 +252,7 @@ function AttachClothProp()
     
     local hash = GetHashKey(Config.ClothProp)
     local obj = CreateObject(hash, 0.0, 0.0, 0.0, true, true, false)
-    AttachEntityToEntity(obj, ped, GetPedBoneIndex(ped, 28422), 0.0, 0.0022, -0.0227, 0.0, 0.0, 0.0, true, true, false, true, 1, true)
+    AttachEntityToEntity(obj, ped, GetPedBoneIndex(ped, 28422), 0.0, 0.0022, -0.0227, 0.0, 180.0, 0.0, true, true, false, true, 1, true)
     SprayState.propEntity = obj
     SetModelAsNoLongerNeeded(hash)
     return obj
