@@ -25,6 +25,23 @@ function ServerCanErase(source)
     return true
 end
 
+--- Called before a player can save a text scene/sign.
+--- @param source number
+--- @param payload table
+--- @return boolean
+function ServerCanCreateScene(source, payload)
+    return true
+end
+
+--- Called before a non-owner, non-admin can delete a text scene/sign.
+--- Owners and admins are allowed before this hook is checked.
+--- @param source number
+--- @param scene table
+--- @return boolean
+function ServerCanDeleteScene(source, scene)
+    return false
+end
+
 -- ============================================================
 -- EVENTS & CALLBACKS
 -- ============================================================
@@ -42,6 +59,20 @@ end
 --- @param paintingId number
 function OnServerSprayRemoved(source, paintingId)
     SprayUtils.DebugPrint('[Custom] Spray removed - ID:', paintingId, 'by source:', source)
+end
+
+--- @param source number
+--- @param sceneId number
+--- @param scene table
+function OnServerTextSceneCreated(source, sceneId, scene)
+    SprayUtils.DebugPrint('[Custom] Text scene saved - ID:', sceneId, 'by source:', source)
+end
+
+--- @param source number
+--- @param sceneId number
+--- @param scene table
+function OnServerTextSceneDeleted(source, sceneId, scene)
+    SprayUtils.DebugPrint('[Custom] Text scene deleted - ID:', sceneId, 'by source:', source)
 end
 
 -- ============================================================

@@ -103,7 +103,12 @@ function DrawPaintingSurface(p)
 end
 
 function LoadAndCreateRenderer(p)
+    p.renderGeneration = (p.renderGeneration or 0) + 1
+    local generation = p.renderGeneration
+
     local strokeData = Peak.Client.TriggerCallback("peak-sprays:getStrokeData", p.id)
+    if p.renderState ~= "loading" or p.renderGeneration ~= generation then return end
+
     if not strokeData then
         p.renderState = "idle"
         SprayUtils.DebugPrint("Failed to load stroke data for painting:", p.id)
@@ -121,7 +126,7 @@ function LoadAndCreateRenderer(p)
     p.duiObj = CreateDui(url, w, h)
     
     SetTimeout(500, function()
-        if not p.duiObj then return end
+        if p.renderState ~= "loading" or p.renderGeneration ~= generation or not p.duiObj then return end
         local txdHandle = CreateRuntimeTxd(p.txdName)
         local handle = GetDuiHandle(p.duiObj)
         if handle and handle ~= "" then
@@ -130,7 +135,7 @@ function LoadAndCreateRenderer(p)
     end)
     
     SetTimeout(400, function()
-        if not p.duiObj then return end
+        if p.renderState ~= "loading" or p.renderGeneration ~= generation or not p.duiObj then return end
         SendDuiMessage(p.duiObj, json.encode({
             action = "init",
             width = w,
@@ -138,7 +143,7 @@ function LoadAndCreateRenderer(p)
         }))
         
         SetTimeout(100, function()
-            if not p.duiObj then return end
+            if p.renderState ~= "loading" or p.renderGeneration ~= generation or not p.duiObj then return end
             SendDuiMessage(p.duiObj, json.encode({
                 action = "loadStrokes",
                 strokes = strokeData
@@ -151,6 +156,8 @@ function LoadAndCreateRenderer(p)
 end
 
 function UnloadRenderer(p)
+    p.renderGeneration = (p.renderGeneration or 0) + 1
+
     if p.duiObj then
         DestroyDui(p.duiObj)
         p.duiObj = nil

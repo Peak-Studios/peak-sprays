@@ -14,6 +14,28 @@ RegisterCommand(Config.AdminCommandName, function()
 end, false)
 
 function OpenAdminPanel()
+    lib.registerContext({
+        id = "spray_admin_home",
+        title = "Peak Sprays Admin",
+        options = {
+            {
+                title = "Spray Paintings",
+                description = "List, preview, teleport to, or delete freehand sprays",
+                icon = "spray-can",
+                onSelect = OpenPaintingAdminPanel
+            },
+            {
+                title = "Text Scenes & Signs",
+                description = "List, teleport to, or delete text scenes and signs",
+                icon = "signs-post",
+                onSelect = OpenTextSceneAdminPanel
+            }
+        }
+    })
+    lib.showContext("spray_admin_home")
+end
+
+function OpenPaintingAdminPanel()
     local paintings = Peak.Client.TriggerCallback("peak-sprays:adminGetPaintings")
     if not paintings or #paintings == 0 then
         lib.notify({ title = "Spray Admin", description = "No paintings found", type = "inform" })
@@ -48,6 +70,7 @@ function ShowPaintingList(paintings)
     lib.registerContext({
         id = "spray_admin_list",
         title = "🎨 Spray Paint Admin  (" .. #paintings .. ")",
+        menu = "spray_admin_home",
         options = options
     })
     lib.showContext("spray_admin_list")
@@ -96,7 +119,7 @@ function ShowPaintingActions(p)
                             lib.notify({ title = "Error", description = result and result.message or "Delete failed", type = "error" })
                         end
                         Wait(200)
-                        OpenAdminPanel()
+                        OpenPaintingAdminPanel()
                     end
                 end
             }
@@ -180,4 +203,152 @@ function CleanupPreview()
     end
     previewTxd = nil
     previewTxn = nil
+end
+
+function OpenTextSceneAdminPanel()
+    local scenes = Peak.Client.TriggerCallback("peak-sprays:adminGetTextScenes")
+    if not scenes or #scenes == 0 then
+        lib.notify({ title = "Text Scene Admin", description = "No text scenes found", type = "inform" })
+        return
+    end
+    ShowTextSceneList(scenes)
+end
+
+function ShowTextSceneList(scenes)
+    local options = {}
+    for _, scene in ipairs(scenes) do
+        local coords = scene.coords or {}
+        local data = scene.displayData or {}
+        local coordText = string.format("%.1f, %.1f, %.1f", coords.x or 0, coords.y or 0, coords.z or 0)
+        local expiry = scene.expiresAt and ("Expires: " .. tostring(scene.expiresAt):sub(1, 16)) or "Permanent"
+
+        options[#options + 1] = {
+            title = "#" .. scene.id .. "  " .. (data.text or "Untitled"),
+            description = coordText .. "  |  " .. (scene.sceneType or "scene") .. "  |  " .. expiry,
+            metadata = {
+                { label = "Creator", value = scene.playerName or "Unknown" },
+                { label = "Identifier", value = scene.identifier or "?" },
+                { label = "Visibility", value = data.visibility or "always" },
+                { label = "Font", value = data.font or "?" }
+            },
+            icon = scene.sceneType == "sign" and "signs-post" or "message-square-text",
+            onSelect = function()
+                ShowTextSceneActions(scene)
+            end
+        }
+    end
+
+    lib.registerContext({
+        id = "text_scene_admin_list",
+        title = "Text Scenes & Signs (" .. #scenes .. ")",
+        menu = "spray_admin_home",
+        options = options
+    })
+    lib.showContext("text_scene_admin_list")
+end
+
+function ShowTextSceneActions(scene)
+    local coords = scene.coords or {}
+    local data = scene.displayData or {}
+
+    lib.registerContext({
+        id = "text_scene_admin_actions",
+        title = "Scene #" .. scene.id,
+        menu = "text_scene_admin_list",
+        options = {
+            {
+                title = "Preview",
+                description = "Render this scene/sign on screen",
+                icon = "eye",
+                onSelect = function()
+                    PreviewTextScene(scene)
+                end
+            },
+            {
+                title = "Teleport",
+                description = string.format("%.1f, %.1f, %.1f", coords.x or 0, coords.y or 0, coords.z or 0),
+                icon = "location-dot",
+                onSelect = function()
+                    if coords.x and coords.y and coords.z then
+                        SetEntityCoords(PlayerPedId(), coords.x + 0.0, coords.y + 0.0, coords.z + 0.0, false, false, false, true)
+                        lib.notify({ title = "Teleported", description = "Scene #" .. scene.id, type = "success" })
+                    end
+                end
+            },
+            {
+                title = "Inspect",
+                description = data.text or "Untitled",
+                icon = "circle-info",
+                metadata = {
+                    { label = "Type", value = scene.sceneType or "scene" },
+                    { label = "Background", value = data.background or "empty" },
+                    { label = "Distance", value = tostring(data.distance or "?") },
+                    { label = "Created", value = tostring(scene.createdAt or "?") }
+                }
+            },
+            {
+                title = "Delete",
+                description = "Mark this text scene/sign deleted",
+                icon = "trash",
+                iconColor = "#ef4444",
+                onSelect = function()
+                    local confirm = lib.alertDialog({
+                        header = "Delete Scene #" .. scene.id .. "?",
+                        content = "Text: **" .. (data.text or "Untitled") .. "**",
+                        centered = true,
+                        cancel = true
+                    })
+                    if confirm == "confirm" then
+                        local result = Peak.Client.TriggerCallback("peak-sprays:adminDeleteTextScene", scene.id)
+                        if result and result.success then
+                            lib.notify({ title = "Deleted", description = "Scene #" .. scene.id .. " removed", type = "success" })
+                        else
+                            lib.notify({ title = "Error", description = result and result.error or "Delete failed", type = "error" })
+                        end
+                        Wait(200)
+                        OpenTextSceneAdminPanel()
+                    end
+                end
+            }
+        }
+    })
+    lib.showContext("text_scene_admin_actions")
+end
+
+function PreviewTextScene(scene)
+    local renderer = Peak.SceneRenderers.GetRenderer(true)
+    if not renderer then
+        lib.notify({ title = "Preview", description = "No renderer available", type = "error" })
+        return
+    end
+
+    Peak.SceneRenderers.Send(renderer, "setSceneData", scene.displayData or {})
+    Peak.SceneRenderers.Send(renderer, "setEye", false)
+    Peak.SceneRenderers.Send(renderer, "setVisible", true)
+
+    Wait(250)
+    local txd, txn = Peak.SceneRenderers.Texture(renderer)
+    if not txd or not txn then
+        Peak.SceneRenderers.DestroyRenderer(renderer)
+        lib.notify({ title = "Preview", description = "Failed to load preview texture", type = "error" })
+        return
+    end
+
+    lib.notify({ title = "Preview", description = "Press BACKSPACE to close", type = "inform", duration = 3000 })
+
+    CreateThread(function()
+        local previewing = true
+        while previewing do
+            Wait(0)
+            DrawRect(0.5, 0.5, 1.0, 1.0, 0, 0, 0, 160)
+            DrawRect(0.5, 0.5, 0.62, 0.37, 255, 255, 255, 24)
+            DrawSprite(txd, txn, 0.5, 0.5, 0.58, 0.326, 0.0, 255, 255, 255, 255)
+
+            DisableControlAction(0, 177, true)
+            if IsDisabledControlJustPressed(0, 177) or IsDisabledControlJustPressed(0, 200) then
+                previewing = false
+            end
+        end
+        Peak.SceneRenderers.DestroyRenderer(renderer)
+    end)
 end

@@ -1,0 +1,95 @@
+@font-face { font-family: Geist; src: url('/scene-assets/fonts/Geist-Regular.woff2'); font-weight: 400; }
+@font-face { font-family: Geist; src: url('/scene-assets/fonts/Geist-Bold.woff2'); font-weight: 800; }
+@font-face { font-family: Oswald; src: url('/scene-assets/fonts/Quantico-Regular.ttf'); font-weight: 400; }
+@font-face { font-family: Oswald; src: url('/scene-assets/fonts/Quantico-Bold.ttf'); font-weight: 800; }
+@font-face { font-family: Creepster; src: url('/scene-assets/fonts/Creepster-Regular.ttf'); }
+@font-face { font-family: 'Rock Salt'; src: url('/scene-assets/fonts/HelpMe.ttf'); }
+
+html,
+body,
+#scene-app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.scene-dui {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: transparent;
+}
+
+.texture {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: var(--col);
+  background: transparent;
+}
+
+.texture.solid {
+  background: var(--bg);
+}
+
+.texture.empty,
+.texture.transparent-bg {
+  background: transparent !important;
+}
+
+.texture.image-bg img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+}
+
+.texture.cover img {
+  object-fit: cover;
+  object-position: var(--offsetX) var(--offsetY);
+  transform: scaleX(calc(var(--sizeX) / 100%)) scaleY(calc(var(--sizeY) / 100%));
+}
+
+.scene-text {
+  position: relative;
+  z-index: 1;
+  width: 92%;
+  max-height: 82%;
+  display: grid;
+  place-items: center;
+  color: var(--col);
+  font-family: var(--font);
+  font-size: var(--size);
+  line-height: 1;
+  text-align: center;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  text-rendering: geometricPrecision;
+  filter: drop-shadow(0 2px 1px rgba(0, 0, 0, .08));
+}
+
+.scene-text.bold { font-weight: 800; }
+.scene-text.italic { font-style: italic; }
+.scene-text.shadow { text-shadow: 0 3px 0 var(--shadowCol), 0 8px 18px rgba(0, 0, 0, .42); }
+.scene-text.outline { -webkit-text-stroke: 2px var(--shadowCol); paint-order: stroke fill; }
+
+.eye-wrap .eye {
+  width: 34%;
+  height: 28%;
+  display: grid;
+  place-items: center;
+  border: 4px solid rgba(255, 255, 255, .82);
+  border-radius: 999px;
+  color: white;
+  background: rgba(0, 0, 0, .42);
+  font: 800 54px Arial, sans-serif;
+  letter-spacing: .12em;
+}

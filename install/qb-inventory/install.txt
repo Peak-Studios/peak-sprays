@@ -1,6 +1,6 @@
 QB/QBX INVENTORY INSTALLATION
 
-Use this guide to register the `spraycloth` and `spraypaint` items for qb-inventory or qbx_core setups.
+Use this guide to register the `spraycloth`, `spraypaint`, `scene_paper`, and `sign_kit` items for qb-inventory or qbx_core setups.
 
 ---
 
@@ -38,6 +38,30 @@ spraypaint = {
     useable = true,
     shouldClose = true,
     description = 'A spray paint can used to paint surfaces.'
+},
+
+scene_paper = {
+    name = 'scene_paper',
+    label = 'Scene Paper',
+    weight = 100,
+    type = 'item',
+    image = 'spraycloth.png',
+    unique = false,
+    useable = true,
+    shouldClose = true,
+    description = 'Used to place a text scene.'
+},
+
+sign_kit = {
+    name = 'sign_kit',
+    label = 'Sign Kit',
+    weight = 250,
+    type = 'item',
+    image = 'spraypaint.png',
+    unique = false,
+    useable = true,
+    shouldClose = true,
+    description = 'Used to place a text sign.'
 },
 
 ---

@@ -1,6 +1,6 @@
 OX_INVENTORY INSTALLATION
 
-Use this guide to register the `spraycloth` and `spraypaint` items for ox_inventory.
+Use this guide to register the `spraycloth`, `spraypaint`, `scene_paper`, and `sign_kit` items for ox_inventory.
 
 ---
 
@@ -26,6 +26,22 @@ Add these entries inside the items table:
     stack = true,
     close = true,
     description = 'A spray paint can used to paint surfaces.'
+},
+
+['scene_paper'] = {
+    label = 'Scene Paper',
+    weight = 100,
+    stack = true,
+    close = true,
+    description = 'Used to place a text scene.'
+},
+
+['sign_kit'] = {
+    label = 'Sign Kit',
+    weight = 250,
+    stack = true,
+    close = true,
+    description = 'Used to place a text sign.'
 },
 
 ---

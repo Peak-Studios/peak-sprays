@@ -26,6 +26,20 @@ function CanErase()
     return true
 end
 
+--- Called before a player can open the text scene/sign creator.
+--- @param sceneType string 'scene'|'sign'
+--- @return boolean
+function CanCreateScene(sceneType)
+    return true
+end
+
+--- Called before a player can attempt local text scene/sign deletion.
+--- Server-side ownership/admin validation still applies.
+--- @return boolean
+function CanDeleteScene()
+    return true
+end
+
 -- ============================================================
 -- EVENTS & CALLBACKS
 -- ============================================================
@@ -43,6 +57,12 @@ end
 function OnSprayRemoved(paintingId)
     SprayUtils.DebugPrint('[Custom] Spray removed - Painting ID:', paintingId)
     -- TriggerEvent('your_script:onSprayRemoved', paintingId)
+end
+
+--- Called after a text scene/sign is successfully saved.
+--- @param scene table
+function OnTextSceneCreated(scene)
+    SprayUtils.DebugPrint('[Custom] Text scene created - Scene ID:', scene and scene.id)
 end
 
 -- ============================================================
@@ -135,4 +155,8 @@ exports('GetNearbyPaintings', function(coords, radius)
         end
     end
     return result
+end)
+
+exports('GetAllTextScenes', function()
+    return Peak.TextScenes or {}
 end)

@@ -185,14 +185,20 @@ function Peak.Server.RegisterUsableItem(item, cb)
         local callback = Peak.Server.UsableItems[item]
         if callback then callback(source, item) end
     end
-
+    -- Framework registration is the correct path for QBCore/Qbox/ESX,
+    -- including ox_inventory installs that delegate item use to the framework.
     if fw == "qbox" then
         exports.qbx_core:CreateUseableItem(item, function(source) onUse(source) end)
+        return
     elseif fw == "qbcore" then
         obj.Functions.CreateUseableItem(item, function(source) onUse(source) end)
+        return
     elseif fw == "esx" then
         obj.RegisterUsableItem(item, function(source) onUse(source) end)
+        return
     end
+
+    Peak.Utils.Warn("No usable item registration available for item:", item)
 end
 
 -- ============================================================

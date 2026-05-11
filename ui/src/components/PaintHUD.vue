@@ -58,6 +58,18 @@ function selectColor(color: string) {
   <!-- Outer: full screen, no pointer events -->
   <div class="fixed inset-0 select-none pointer-events-none z-[100] overflow-hidden hud-shell">
 
+    <!-- ── Top-right: Action Panel ──────────────────────────────── -->
+    <div class="absolute top-7 right-7 animate-slide-right z-50">
+      <div class="glass-panel pointer-events-auto flex items-center gap-3 p-2.5 rounded-2xl border-white/10 shadow-2xl">
+        <button @click="fetchNui('confirmSpray')" class="h-10 px-6 rounded-xl text-[11px] font-black uppercase tracking-[0.2em] bg-emerald-300/15 text-emerald-100 border border-emerald-300/25 hover:bg-emerald-300/25 transition-all duration-300 shadow-[0_10px_30px_-18px_rgba(110,231,183,0.9)]">
+          SAVE
+        </button>
+        <button @click="fetchNui('cancelSpray')" class="h-10 w-10 rounded-xl flex items-center justify-center text-xl font-light bg-white/5 text-white/50 border border-white/10 hover:bg-white/15 hover:text-white/80 transition-all duration-300">
+          ×
+        </button>
+      </div>
+    </div>
+
     <!-- ── Top-left: Smart Brush Panel ──────────────────────────── -->
     <div class="absolute top-7 left-7 animate-slide-left space-y-3">
       

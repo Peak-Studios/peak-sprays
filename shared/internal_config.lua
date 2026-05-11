@@ -82,11 +82,11 @@ Config.EnableColorPicker = true
 
 -- Key Bindings
 Config.Keys = {
-    SelectCorner = 24, CancelSelection = 177, Paint = 24, Erase = 25,
-    Validate = 191, Cancel = 177, Undo = -1, Redo = -1,
+    SelectCorner = 24, CancelSelection = 178, Paint = 24, Erase = 25,
+    Validate = 191, Cancel = 178, Undo = -1, Redo = -1,
     ScrollUp = 241, ScrollDown = 242, ShakeCan = 47, ToggleMouse = 19,
     MoveForward = 172, MoveBackward = 173,
-    EraseStroke = 24, ValidateErase = 191, CancelErase = 177
+    EraseStroke = 24, ValidateErase = 191, CancelErase = 178
 }
 Config.PositionStepSize = 0.01
 Config.DuiMoveMaxOffset = 0.3
@@ -153,3 +153,78 @@ Config.ExportCommand = 'sprayexport'
 Config.ExportLimitPerUser = 10
 Config.ExportLimitPerPainting = 3
 Config.ExportLimitResetSeconds = 3600
+
+-- Text Scenes & Signs
+Config.ScenesEnabled = true
+Config.SceneUseCommand = true
+Config.SceneUseItem = false
+Config.SceneDeleteCommandName = 'deletescene'
+Config.SceneHideCommandName = 'hidescenes'
+Config.SceneMaxTextLength = 200
+Config.ScenePlacementDistance = 8.0
+Config.SceneDefaultDistance = 10.0
+Config.SceneDefaultCloseDistance = 3.0
+Config.SceneDefaultHours = 24
+Config.SceneAllowPermanentAdmin = true
+Config.SceneExpiryCheckInterval = 60
+Config.SceneMaxActiveRenderers = 25
+Config.SceneRendererWidth = 1280
+Config.SceneRendererHeight = 720
+Config.SceneScale = 0.1
+Config.SceneTextItemConsume = false
+Config.SceneSignItemConsume = false
+Config.SceneAccentColor = '#87da21'
+Config.SceneFonts = {
+    'Geist', 'Oswald', 'Montserrat', 'Lato', 'Merriweather', 'Raleway',
+    'Lobster', 'Creepster', 'Rock Salt', 'Nosifer'
+}
+Config.SceneBackgrounds = {
+    'empty', 'solid', 'sticky', 'oldPaper', 'oldPaper2', 'oldPaper3',
+    'tornPaper', 'warning', 'wood', 'water', 'blood', 'blueprint'
+}
+Config.ScenePresets = {
+    {
+        name = 'Default Scene',
+        text = 'This is a scene.',
+        font = 'Oswald',
+        fontSize = 48,
+        fontColor = '#ffffff',
+        fontOutline = 'none',
+        fontOutlineColor = '#000000',
+        fontStyle = 'normal',
+        background = 'empty',
+        backgroundFill = 'contain',
+        backgroundOffsetX = 50,
+        backgroundOffsetY = 50,
+        backgroundSizeX = 100,
+        backgroundSizeY = 100,
+        backgroundColor = '#262626',
+        rotationType = 'rotateGround',
+        distance = 10,
+        closeDistance = 3,
+        hoursVisible = 24,
+        visibility = 'always'
+    },
+    {
+        name = 'Simple Sign',
+        text = 'NOTICE',
+        font = 'Geist',
+        fontSize = 54,
+        fontColor = '#111827',
+        fontOutline = 'none',
+        fontOutlineColor = '#000000',
+        fontStyle = 'bold',
+        background = 'solid',
+        backgroundFill = 'contain',
+        backgroundOffsetX = 50,
+        backgroundOffsetY = 50,
+        backgroundSizeX = 100,
+        backgroundSizeY = 100,
+        backgroundColor = '#f8fafc',
+        rotationType = 'rotateGround',
+        distance = 12,
+        closeDistance = 3,
+        hoursVisible = 168,
+        visibility = 'always'
+    }
+}
