@@ -82,11 +82,11 @@ Config.EnableColorPicker = true
 
 -- Key Bindings
 Config.Keys = {
-    SelectCorner = 24, CancelSelection = 178, Paint = 24, Erase = 25,
-    Validate = 191, Cancel = 178, Undo = -1, Redo = -1,
+    SelectCorner = 24, CancelSelection = 177, Paint = 24, Erase = 25,
+    Validate = 191, Cancel = 177, Undo = -1, Redo = -1,
     ScrollUp = 241, ScrollDown = 242, ShakeCan = 47, ToggleMouse = 19,
     MoveForward = 172, MoveBackward = 173,
-    EraseStroke = 24, ValidateErase = 191, CancelErase = 178
+    EraseStroke = 24, ValidateErase = 191, CancelErase = 177
 }
 Config.PositionStepSize = 0.01
 Config.DuiMoveMaxOffset = 0.3

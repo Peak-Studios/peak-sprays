@@ -145,7 +145,7 @@ function selectColor(color: string) {
       <div v-if="!hudData.isEraseMode" class="animate-slide-up delay-100">
         <div class="glass-panel hud-card pointer-events-auto w-[282px] p-4 space-y-3">
           <div class="flex justify-between items-center">
-            <span class="hud-label">Spray Density</span>
+            <span class="hud-label">Paint Scatter</span>
             <span class="hud-value">
               {{ Math.round(hudData.density * 100) }}%
             </span>
@@ -315,7 +315,7 @@ function selectColor(color: string) {
             <div class="flex items-center justify-between group transition-all">
               <span class="command-label">Depth</span>
               <div class="keycap">
-                <span>±</span>
+                <span>↑ / ↓</span>
               </div>
             </div>
           </div>
