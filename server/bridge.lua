@@ -12,7 +12,7 @@ Peak.Server.UsableItems = {}
 function Peak.Server.GetIdentifier(src)
     local fw = Peak.Server.FrameworkName
     local obj = Peak.Server.FrameworkObject
-    
+
     if fw == "qbcore" or fw == "qbox" then
         local player = obj.Functions.GetPlayer(src)
         return player and player.PlayerData.citizenid
@@ -29,7 +29,7 @@ end
 function Peak.Server.GetPlayerName(src)
     local fw = Peak.Server.FrameworkName
     local obj = Peak.Server.FrameworkObject
-    
+
     if fw == "qbcore" or fw == "qbox" then
         local player = obj.Functions.GetPlayer(src)
         if player then
@@ -53,12 +53,12 @@ end
 --- @return boolean
 function Peak.Server.AddMoney(source, amount, moneyType)
     moneyType = moneyType or Config.DefaultMoneyType
-    
+
     if Config.Banking == "custom" then
         local res = Open.AddMoney(source, amount, moneyType)
         if res ~= nil then return res end
     end
-    
+
     local fw = Peak.Server.FrameworkName
     local obj = Peak.Server.FrameworkObject
     if fw == "qbcore" or fw == "qbox" then
@@ -84,12 +84,12 @@ end
 --- @return boolean
 function Peak.Server.RemoveMoney(source, amount, moneyType)
     moneyType = moneyType or Config.DefaultMoneyType
-    
+
     if Config.Banking == "custom" then
         local res = Open.RemoveMoney(source, amount, moneyType)
         if res ~= nil then return res end
     end
-    
+
     local fw = Peak.Server.FrameworkName
     local obj = Peak.Server.FrameworkObject
     if fw == "qbcore" or fw == "qbox" then
@@ -120,7 +120,7 @@ end
 function Peak.Server.RemoveItem(source, item, count)
     local fw = Peak.Server.FrameworkName
     local obj = Peak.Server.FrameworkObject
-    
+
     if fw == "qbcore" or fw == "qbox" then
         local player = obj.Functions.GetPlayer(source)
         if player then
@@ -133,11 +133,11 @@ function Peak.Server.RemoveItem(source, item, count)
             return true
         end
     end
-    
+
     if GetResourceState("ox_inventory") == "started" then
         return exports.ox_inventory:RemoveItem(source, item, count)
     end
-    
+
     return false
 end
 
@@ -151,7 +151,7 @@ function Peak.Server.HasItem(source, item, count)
     local fw = Peak.Server.FrameworkName
     local obj = Peak.Server.FrameworkObject
     local actualCount = 0
-    
+
     if fw == "qbcore" or fw == "qbox" then
         local player = obj.Functions.GetPlayer(source)
         if player then
@@ -165,11 +165,11 @@ function Peak.Server.HasItem(source, item, count)
             actualCount = itemData and (itemData.count or 0) or 0
         end
     end
-    
+
     if actualCount < count and GetResourceState("ox_inventory") == "started" then
         actualCount = exports.ox_inventory:GetItemCount(source, item) or 0
     end
-    
+
     return actualCount >= count
 end
 
@@ -180,19 +180,12 @@ function Peak.Server.RegisterUsableItem(item, cb)
     Peak.Server.UsableItems[item] = cb
     local fw = Peak.Server.FrameworkName
     local obj = Peak.Server.FrameworkObject
-    
+
     local onUse = function(source)
         local callback = Peak.Server.UsableItems[item]
         if callback then callback(source, item) end
     end
-    
-    -- Try Ox Inventory first
-    if GetResourceState("ox_inventory") == "started" then
-        exports.ox_inventory:RegisterUsableItem(item, function(source) onUse(source) end)
-        return
-    end
-    
-    -- Framework fallbacks
+
     if fw == "qbox" then
         exports.qbx_core:CreateUseableItem(item, function(source) onUse(source) end)
     elseif fw == "qbcore" then
@@ -211,7 +204,7 @@ end
 --- @return boolean
 function Peak.Server.IsAdmin(src)
     if IsPlayerAceAllowed(src, Config.AdminAce) then return true end
-    
+
     local fw = Peak.Server.FrameworkName
     if fw == "qbcore" or fw == "qbox" then
         return Peak.Server.FrameworkObject.Functions.HasPermission(src, "admin") or Peak.Server.FrameworkObject.Functions.HasPermission(src, "god")
