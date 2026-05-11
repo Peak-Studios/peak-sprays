@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+early_access: false
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!ui/dist/**"
+    - "!ui/node_modules/**"
+    - "!**/*.map"
+  path_instructions:
+    - path: "**/*.lua"
+      instructions: |
+        Review this as FiveM resource code. Focus on client/server event safety,
+        permission checks, ox_lib/oxmysql usage, framework bridge compatibility,
+        nil handling, and avoiding unnecessary runtime loops.
+    - path: "ui/src/**"
+      instructions: |
+        Review the Vue/NUI code for FiveM browser compatibility, responsive HUD
+        behavior, stable postMessage contracts, and consistency with the existing
+        Peak Studios glass-morphism UI style and #D6FF62 accent color.
+    - path: "install/**"
+      instructions: |
+        Check installation docs and SQL for accuracy, idempotency where practical,
+        inventory compatibility, and clear setup steps for QBCore, ESX, ox_inventory,
+        and qb-inventory users.
+
+chat:
+  auto_reply: true
