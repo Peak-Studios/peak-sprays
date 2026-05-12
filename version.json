@@ -1,6 +1,6 @@
 {
   "peak-sprays": {
-    "version": "0.2.0",
-    "changelog": "- Major premium UI redesign with glassmorphism and animations.\n- Improved raycasting precision for better spray placement.\n- Enhanced stability and performance of the rendering system.\n- Optimized SQL queries and resource efficiency."
+    "version": "0.2.1",
+    "changelog": "- Fixed Reliable network event size overflow via delta-sync implementation.\n- Major premium UI redesign with glassmorphism and animations.\n- Improved raycasting precision for better spray placement.\n- Enhanced stability and performance of the rendering system.\n- Optimized SQL queries and resource efficiency."
   }
 }
