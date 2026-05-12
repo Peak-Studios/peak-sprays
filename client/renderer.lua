@@ -196,12 +196,12 @@ function CleanupPreview()
     IsPreviewing = false
 end
 
-RegisterNetEvent("peak-sprays:cl:livePreview", function(sourcePlayer, strokes, cornersTable, width, height)
+RegisterNetEvent("peak-sprays:cl:livePreview", function(sourcePlayer, payload)
     if sourcePlayer == GetPlayerServerId(PlayerId()) then return end
     if not Config.LivePreviewEnabled then return end
-    if not strokes or not cornersTable then return end
+    if not payload or not payload.corners then return end
     
-    local corners = SprayUtils.TableToCorners(cornersTable)
+    local corners = SprayUtils.TableToCorners(payload.corners)
     if not corners then return end
     
     if not PreviewDui then
@@ -209,8 +209,8 @@ RegisterNetEvent("peak-sprays:cl:livePreview", function(sourcePlayer, strokes, c
         PreviewTxd = "peak_spray_lp_" .. PreviewCounter .. "_d"
         PreviewTxn = "peak_spray_lp_" .. PreviewCounter
         
-        local w = width or Config.CanvasWidth
-        local h = height or Config.CanvasHeight
+        local w = payload.width or Config.CanvasWidth
+        local h = payload.height or Config.CanvasHeight
         local url = ("nui://%s/ui/dist/canvas.html?width=%d&height=%d"):format(GetCurrentResourceName(), w, h)
         
         PreviewDui = CreateDui(url, w, h)
@@ -226,27 +226,34 @@ RegisterNetEvent("peak-sprays:cl:livePreview", function(sourcePlayer, strokes, c
             }))
             SetTimeout(100, function()
                 if not PreviewDui then return end
-                SendDuiMessage(PreviewDui, json.encode({
-                    action = "loadStrokes",
-                    strokes = strokes
-                }))
+                if payload.newStrokes and #payload.newStrokes > 0 then
+                    SendDuiMessage(PreviewDui, json.encode({ action = "loadStrokes", strokes = payload.newStrokes }))
+                end
+                if payload.activeStrokeUpdate then
+                    SendDuiMessage(PreviewDui, json.encode({ action = "drawStroke", stroke = payload.activeStrokeUpdate }))
+                end
                 PreviewCorners = corners
                 IsPreviewing = true
                 PreviewStartTime = GetGameTimer()
             end)
         end)
     else
-        SendDuiMessage(PreviewDui, json.encode({ action = "clear" }))
-        SetTimeout(50, function()
-            if not PreviewDui then return end
-            SendDuiMessage(PreviewDui, json.encode({
-                action = "loadStrokes",
-                strokes = strokes
+        -- Update existing preview
+        if payload.newStrokes and #payload.newStrokes > 0 then
+            SendDuiMessage(PreviewDui, json.encode({ action = "loadStrokes", strokes = payload.newStrokes, append = true }))
+        end
+        
+        if payload.activeStrokeUpdate then
+            -- Note: Our canvas JS needs to handle 'updateActivePreview' or similar
+            SendDuiMessage(PreviewDui, json.encode({ 
+                action = "updateActivePreview", 
+                stroke = payload.activeStrokeUpdate 
             }))
-            PreviewCorners = corners
-            IsPreviewing = true
-            PreviewStartTime = GetGameTimer()
-        end)
+        end
+        
+        PreviewCorners = corners
+        IsPreviewing = true
+        PreviewStartTime = GetGameTimer()
     end
 end)
 

@@ -384,16 +384,33 @@
       }
 
       case 'loadStrokes': {
-        ctx.clearRect(0, 0, canvasW, canvasH)
-        snapshots = []
-        strokes = []
-        redoStack = []
-        takeSnapshot()
+        const append = data.append || false
+        if (!append) {
+          ctx.clearRect(0, 0, canvasW, canvasH)
+          snapshots = []
+          strokes = []
+          redoStack = []
+          takeSnapshot()
+        }
         const incoming = data.strokes || []
         for (let i = 0; i < incoming.length; i++) {
           replayStroke(incoming[i])
           strokes.push(incoming[i])
           takeSnapshot()
+        }
+        break
+      }
+
+      case 'updateActivePreview': {
+        if (!data.stroke || !data.stroke.points || data.stroke.points.length === 0) break
+        // To avoid ghosting/doubling, we only render the latest segment
+        const pts = data.stroke.points
+        if (pts.length === 1) {
+          renderStyledDot(data.stroke, pts[0])
+        } else {
+          const prev = pts[pts.length - 2]
+          const curr = pts[pts.length - 1]
+          renderStyledSegment(data.stroke, prev, curr, pts.length - 1, pts.length)
         }
         break
       }

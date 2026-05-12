@@ -50,6 +50,12 @@ CreateThread(function()
                 TriggerClientEvent("peak-sprays:useSprayPaint", source, item)
             end)
         end
+
+        if Config.GangSprayItem and Config.GangSprayItem ~= Config.SprayPaintItem then
+            Peak.Server.RegisterUsableItem(Config.GangSprayItem, function(source, item)
+                TriggerClientEvent("peak-sprays:useSprayPaint", source, item)
+            end)
+        end
         
         -- Eraser cloth
         Peak.Server.RegisterUsableItem(Config.ClothItem, function(source, item)
@@ -75,7 +81,7 @@ Peak.Server.RegisterCallback("peak-sprays:hasClothItem", function(source)
 end)
 
 Peak.Server.RegisterCallback("peak-sprays:getPaintings", function(source)
-    local result = Peak.Server.ExecuteSQL("SELECT id, corners, normal, canvas_width, canvas_height, world_x, world_y, world_z, stroke_count FROM spray_paintings", {})
+    local result = Peak.Server.ExecuteSQL("SELECT id, corners, normal, canvas_width, canvas_height, world_x, world_y, world_z, stroke_count, gang_id, status FROM spray_paintings", {})
     if not result then return {} end
     
     local paintings = {}
@@ -89,7 +95,9 @@ Peak.Server.RegisterCallback("peak-sprays:getPaintings", function(source)
             world_x = row.world_x,
             world_y = row.world_y,
             world_z = row.world_z,
-            stroke_count = row.stroke_count
+            stroke_count = row.stroke_count,
+            gang_id = row.gang_id,
+            status = row.status
         })
     end
     return paintings
@@ -112,6 +120,11 @@ Peak.Server.RegisterCallback("peak-sprays:savePainting", function(source, data)
     end
     
     if not ServerCanSpray(source) then return { success = false, message = "Permission denied" } end
+
+    local territory = Peak.Territory and Peak.Territory.ValidatePlacement(source, data) or { success = true, gangId = nil }
+    if not territory or not territory.success then
+        return territory or { success = false, message = "Territory validation failed" }
+    end
     
     local identifier = Peak.Server.GetIdentifier(source)
     local playerName = Peak.Server.GetPlayerName(source)
@@ -127,11 +140,12 @@ Peak.Server.RegisterCallback("peak-sprays:savePainting", function(source, data)
     
     local insertId = Peak.Server.InsertSQL([[
         INSERT INTO spray_paintings 
-        (identifier, player_name, corners, normal, stroke_data, canvas_width, canvas_height, world_x, world_y, world_z, stroke_count, expires_at) 
-        VALUES (@identifier, @player_name, @corners, @normal, @stroke_data, @canvas_width, @canvas_height, @world_x, @world_y, @world_z, @stroke_count, @expires_at)
+        (identifier, player_name, gang_id, status, corners, normal, stroke_data, canvas_width, canvas_height, world_x, world_y, world_z, stroke_count, expires_at) 
+        VALUES (@identifier, @player_name, @gang_id, 'normal', @corners, @normal, @stroke_data, @canvas_width, @canvas_height, @world_x, @world_y, @world_z, @stroke_count, @expires_at)
     ]], {
         ["@identifier"] = identifier,
         ["@player_name"] = playerName,
+        ["@gang_id"] = territory.gangId,
         ["@corners"] = json.encode(data.corners),
         ["@normal"] = json.encode(data.normal),
         ["@stroke_data"] = json.encode(data.strokeData),
@@ -155,12 +169,17 @@ Peak.Server.RegisterCallback("peak-sprays:savePainting", function(source, data)
         world_x = data.worldX,
         world_y = data.worldY,
         world_z = data.worldZ,
-        stroke_count = data.strokeCount
+        stroke_count = data.strokeCount,
+        gang_id = territory.gangId,
+        status = "normal"
     }
     
     TriggerClientEvent("peak-sprays:cl:newPainting", -1, clientData)
     LogPaintCreate(source, playerName, identifier, insertId, data)
     OnServerSprayCompleted(source, insertId, data)
+    if territory.gangId and Peak.Gangs and Peak.Gangs.AddSprayXp then
+        Peak.Gangs.AddSprayXp(territory.gangId)
+    end
     
     return { success = true, id = insertId }
 end)
@@ -253,8 +272,8 @@ end
 -- LIVE PREVIEW
 -- ============================================================
 
-RegisterNetEvent("peak-sprays:sv:livePreview", function(strokeData, corners, width, height)
+RegisterNetEvent("peak-sprays:sv:livePreview", function(payload)
     local src = source
     if not Config.LivePreviewEnabled then return end
-    TriggerClientEvent("peak-sprays:cl:livePreview", -1, src, strokeData, corners, width, height)
+    TriggerClientEvent("peak-sprays:cl:livePreview", -1, src, payload)
 end)

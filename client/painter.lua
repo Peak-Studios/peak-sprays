@@ -68,6 +68,26 @@ function StartPaintingMode()
                 width = resX,
                 height = resY
             }))
+
+            if SprayState.activeItem == Config.GangSprayItem
+            and Peak.ClientGang
+            and Peak.ClientGang.gang
+            and Peak.ClientGang.gang.official_mark then
+                local mark = Peak.ClientGang.gang.official_mark
+                local strokes = mark.strokeData or mark.strokes or mark
+                if type(strokes) == "table" then
+                    SprayState.strokeHistory = strokes
+                    SprayState.strokeCount = #strokes
+                    SendDuiMessage(SprayState.duiObject, json.encode({ action = "loadStrokes", strokes = strokes }))
+                    SendNUIMessage({
+                        action = "strokeUpdate",
+                        strokeCount = SprayState.strokeCount,
+                        maxStrokes = Config.MaxStrokesPerPainting,
+                        canUndo = SprayState.strokeCount > 0,
+                        canRedo = false
+                    })
+                end
+            end
         end
     end)
 
@@ -884,19 +904,68 @@ end
 
 function StartLivePreviewLoop()
     CreateThread(function()
+        local lastSyncedStrokeCount = 0
+        local lastSyncedPointCount = 0
+        
         while SprayState.mode == "painting" do
             Wait(Config.LivePreviewInterval or 1000)
 
             if SprayState.mode ~= "painting" then return end
-            if SprayState.corners and SprayState.strokeHistory and #SprayState.strokeHistory > 0 then
-                TriggerServerEvent(
-                    "peak-sprays:sv:livePreview",
-                    SprayState.strokeHistory,
-                    SprayUtils.CornersToTable(SprayState.corners),
-                    SprayState.canvasWidth or Config.CanvasWidth,
-                    SprayState.canvasHeight or Config.CanvasHeight
-                )
+            
+            local history = SprayState.strokeHistory
+            if not history or #history == 0 then
+                lastSyncedStrokeCount = 0
+                lastSyncedPointCount = 0
+                goto continue
             end
+
+            local activeIdx = SprayState.activeStrokeIndex
+            local currentTotalStrokes = #history
+            
+            -- Prepare delta payload
+            local payload = {
+                type = "delta",
+                newStrokes = {},
+                activeStrokeUpdate = nil,
+                corners = SprayUtils.CornersToTable(SprayState.corners),
+                width = SprayState.canvasWidth or Config.CanvasWidth,
+                height = SprayState.canvasHeight or Config.CanvasHeight
+            }
+            
+            local shouldSync = false
+
+            -- 1. Sync completed strokes (everything before the current active one)
+            local completedLimit = activeIdx and (activeIdx - 1) or currentTotalStrokes
+            if completedLimit > lastSyncedStrokeCount then
+                for i = lastSyncedStrokeCount + 1, completedLimit do
+                    table.insert(payload.newStrokes, history[i])
+                end
+                lastSyncedStrokeCount = completedLimit
+                shouldSync = true
+                -- Reset point sync when moving to a new stroke
+                lastSyncedPointCount = 0 
+            end
+
+            -- 2. Sync the currently active stroke if it has new points
+            if activeIdx and history[activeIdx] then
+                local active = history[activeIdx]
+                local currentPoints = #active.points
+                
+                if currentPoints > lastSyncedPointCount then
+                    -- To ensure DUI accuracy, we send the stroke metadata + the NEW points
+                    -- We'll send the full stroke for now but only if it's new/changed
+                    -- Since it's only ONE stroke, it's very unlikely to hit 65KB
+                    payload.activeStrokeUpdate = active
+                    lastSyncedPointCount = currentPoints
+                    shouldSync = true
+                end
+            end
+
+            if shouldSync then
+                TriggerServerEvent("peak-sprays:sv:livePreview", payload)
+            end
+
+            ::continue::
         end
     end)
 end
