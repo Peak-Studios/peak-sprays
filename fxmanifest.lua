@@ -19,6 +19,7 @@ server_scripts {
     'server/bridge.lua',
     'server/custom.lua',
     'server/manager.lua',
+    'server/scenes.lua',
     'server/admin.lua',
     'server/logs.lua',
     'server/server-config.lua',
@@ -32,6 +33,10 @@ client_scripts {
     'client/painter.lua',
     'client/raycast.lua',
     'client/renderer.lua',
+    'client/scene_utils.lua',
+    'client/scene_renderer.lua',
+    'client/scene_creator.lua',
+    'client/nui.lua',
     'client/eraser.lua',
     'client/admin.lua',
 }
@@ -40,6 +45,8 @@ ui_page 'ui/dist/index.html'
 
 files {
     'ui/dist/index.html',
+    'ui/dist/scene.html',
+    'ui/dist/canvas.html',
     'ui/dist/**/*',
 }
 

@@ -34,6 +34,8 @@ SprayState = {
     targetPaintingUp = nil,
     pendingValidate = false,
     pendingCancel = false,
+    targetPaintingNormal = nil,
+    existingStrokes = nil
 }
 
 KnownPaintings = {}
@@ -43,6 +45,9 @@ KnownPaintings = {}
 -- ============================================================
 
 CreateThread(function()
+    Wait(500)
+    FullCleanup(true)
+
     while not Peak.Client or not Peak.Client.Ready do
         Wait(500)
     end
@@ -273,17 +278,27 @@ end
 -- ============================================================
 
 --- Fully resets the spray state and cleans up all temporary objects/effects.
-function FullCleanup()
+function FullCleanup(hardClear)
     SprayUtils.DebugPrint("[Cleanup] Full cleanup initiated, mode was:", SprayState.mode)
     StopSprayParticle()
     StopSpraySound()
     DetachProp()
-    ClearPedTasks(PlayerPedId())
+
+    local ped = PlayerPedId()
+    ClearPedTasks(ped)
+    if hardClear then
+        ClearPedTasksImmediately(ped)
+    end
 
     if SprayState.duiObject then
         DestroyDui(SprayState.duiObject)
         SprayState.duiObject = nil
     end
+
+    if SprayState.propEntity and DoesEntityExist(SprayState.propEntity) then
+        DeleteObject(SprayState.propEntity)
+    end
+    SprayState.propEntity = nil
 
     SprayState.mode = "idle"
     SprayState.corner1 = nil
@@ -304,6 +319,14 @@ function FullCleanup()
     SprayState.targetPaintingUp = nil
     SprayState.pendingValidate = false
     SprayState.pendingCancel = false
+    SprayState.targetPaintingNormal = nil
+    SprayState.existingStrokes = nil
+    SprayState._eraseMode = false
+    SprayState._duiOffset = nil
+    SprayState.duiTxd = nil
+    SprayState.duiTxn = nil
+    SprayState.canvasWidth = nil
+    SprayState.canvasHeight = nil
 
     SetNuiFocus(false, false)
     SetNuiFocusKeepInput(false)
@@ -355,114 +378,8 @@ end)
 
 AddEventHandler("onResourceStop", function(resourceName)
     if resourceName ~= GetCurrentResourceName() then return end
-    FullCleanup()
+    FullCleanup(true)
     for _, p in pairs(KnownPaintings) do
         if p.duiObj then DestroyDui(p.duiObj) end
     end
-end)
-
--- ============================================================
--- NUI CALLBACKS
--- Handle fetchNui() calls from the Vue HUD
--- ============================================================
-
-RegisterNUICallback("releaseMouse", function(_, cb)
-    if SprayState._nuiMouseActive then
-        SetNuiFocus(false, false)
-        SetNuiFocusKeepInput(false)
-        SprayState._nuiMouseActive = false
-    end
-    cb("ok")
-end)
-
-RegisterNUICallback("confirmSpray", function(_, cb)
-    if SprayState._nuiMouseActive then
-        SetNuiFocus(false, false)
-        SetNuiFocusKeepInput(false)
-        SprayState._nuiMouseActive = false
-    end
-    if SprayState.mode == "painting" then
-        ValidatePainting()
-    elseif SprayState.mode == "erasing" then
-        ValidateErase()
-    end
-    cb("ok")
-end)
-
-RegisterNUICallback("cancelSpray", function(_, cb)
-    if SprayState._nuiMouseActive then
-        SetNuiFocus(false, false)
-        SetNuiFocusKeepInput(false)
-        SprayState._nuiMouseActive = false
-    end
-    if SprayState.mode == "painting" then
-        CancelPainting()
-    elseif SprayState.mode == "erasing" then
-        CancelErase()
-    elseif SprayState.mode == "selecting" then
-        CancelSelection()
-    end
-    cb("ok")
-end)
-
-RegisterNUICallback("changeColor", function(data, cb)
-    if data and data.color and not SprayState.forcedColor then
-        SprayState.currentColor = data.color
-    end
-    cb("ok")
-end)
-
-RegisterNUICallback("changeDensity", function(data, cb)
-    if data and data.density then
-        SprayState.density = SprayUtils.Clamp(tonumber(data.density) or 0.7, 0.0, 1.0)
-    end
-    cb("ok")
-end)
-
-RegisterNUICallback("uiExportPainting", function(_, cb)
-    if SprayState.mode == "painting" and SprayState.strokeHistory and #SprayState.strokeHistory > 0 then
-        local result = Peak.Client.TriggerCallback("peak-sprays:exportCurrentStrokes", {
-            strokeData    = SprayState.strokeHistory,
-            canvasWidth   = SprayState.canvasWidth or Config.CanvasWidth,
-            canvasHeight  = SprayState.canvasHeight or Config.CanvasHeight,
-        })
-        if result and result.success and result.code then
-            SendNUIMessage({ action = "exportResult", code = result.code })
-            SendNUIMessage({ action = "copyToClipboard", text = result.code })
-        end
-    end
-    cb("ok")
-end)
-
-RegisterNUICallback("uiImportPainting", function(data, cb)
-    if SprayState.mode == "painting" and data and data.code and SprayState.duiObject then
-        local result = Peak.Client.TriggerCallback("peak-sprays:importPainting", data.code)
-        if result and result.success and result.strokeData then
-            SendDuiMessage(SprayState.duiObject, json.encode({ action = "clear" }))
-            SendDuiMessage(SprayState.duiObject, json.encode({
-                action  = "loadStrokes",
-                strokes = result.strokeData,
-            }))
-            SprayState.strokeHistory = result.strokeData
-            SprayState.strokeCount   = #result.strokeData
-            SprayState.totalPoints   = 0
-            for _, s in ipairs(SprayState.strokeHistory) do
-                SprayState.totalPoints = SprayState.totalPoints + ((s.points and #s.points) or 0)
-            end
-            SendNUIMessage({
-                action      = "strokeUpdate",
-                strokeCount = SprayState.strokeCount,
-                maxStrokes  = Config.MaxStrokesPerPainting,
-                canUndo     = #SprayState.strokeHistory > 0,
-                canRedo     = false,
-            })
-        else
-            Peak.Client.Notify((result and result.message) or "Invalid import code", "error", Config.NotifyDuration)
-        end
-    end
-    cb("ok")
-end)
-
-RegisterNUICallback("copyResult", function(_, cb)
-    cb("ok")
 end)

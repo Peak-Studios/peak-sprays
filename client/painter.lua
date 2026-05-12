@@ -645,15 +645,10 @@ end
 
 SprayState._nuiMouseActive = false
 function ToggleNuiMouse()
-    if SprayState._nuiMouseActive then
-        SetNuiFocus(false, false)
-        SetNuiFocusKeepInput(false)
-        SprayState._nuiMouseActive = false
-    else
-        SetNuiFocus(true, true)
-        SetNuiFocusKeepInput(true)
-        SprayState._nuiMouseActive = true
-    end
+    local shouldFocus = not SprayState._nuiMouseActive
+    SetNuiFocus(shouldFocus, shouldFocus)
+    SetNuiFocusKeepInput(shouldFocus)
+    SprayState._nuiMouseActive = shouldFocus
 end
 
 function PaintingDistanceCheck()
@@ -669,7 +664,7 @@ function PaintingDistanceCheck()
                     Peak.Client.Notify(L("painting_auto_saved"), "info", Config.NotifyDuration)
                     ValidatePainting()
                 elseif SprayState.mode == "erasing" then
-                    FullCleanup()
+                    CancelErase(true)
                 end
                 return
             end

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
 import PaintHUD from '@/components/PaintHUD.vue'
+import SceneEditor from '@/components/SceneEditor.vue'
 import { hudData, showHUD } from '@/store/hudState'
+import { dispatchSceneAction, sceneState } from '@/store/sceneState'
 import { fetchNui } from '@/utils/fetchNui'
 
 // ─── Web Audio (spray sound) ──────────────────────────────────────────
@@ -51,6 +53,11 @@ function startSpraySound() {
 // ─── NUI message handler ──────────────────────────────────────────────
 function onMessage(event: MessageEvent) {
   const a = event.data
+  if (a?.event === 'sendAppEvent') {
+    dispatchSceneAction(a.app, a.action, a.payload)
+    return
+  }
+
   if (!a || !a.action) return
 
   switch (a.action) {
@@ -119,10 +126,27 @@ function onMessage(event: MessageEvent) {
   }
 }
 
-// ─── Keyboard handler (Escape or Alt releases mouse) ──────────────────
+// ─── Keyboard handler (scene creator and spray focus shortcuts) ────────
 function onKeyEvent(e: KeyboardEvent) {
   const isEscape = e.key === 'Escape' || e.code === 'Escape' || e.keyCode === 27
+  const isEnter  = e.key === 'Enter'  || e.code === 'Enter'  || e.keyCode === 13
   const isAlt    = e.key === 'Alt'    || e.code === 'AltLeft' || e.code === 'AltRight' || e.keyCode === 18
+
+  if (sceneState.visible && e.type === 'keydown' && !e.repeat) {
+    if (isEscape) {
+      e.preventDefault()
+      e.stopPropagation()
+      fetchNui('sceneEditor:close')
+      return
+    }
+
+    if (isEnter) {
+      e.preventDefault()
+      e.stopPropagation()
+      fetchNui('sceneEditor:editPosition')
+      return
+    }
+  }
 
   if (isEscape || isAlt) {
     e.preventDefault()
@@ -148,5 +172,6 @@ onUnmounted(() => {
 <template>
   <div class="w-full h-full relative">
     <PaintHUD v-if="showHUD.value" />
+    <SceneEditor />
   </div>
 </template>

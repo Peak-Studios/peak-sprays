@@ -19,3 +19,21 @@ CREATE TABLE IF NOT EXISTS `spray_paintings` (
     INDEX `idx_identifier` (`identifier`),
     INDEX `idx_expires_at` (`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `peak_text_scenes` (
+    `id` INT(11) NOT NULL AUTO_INCREMENT,
+    `identifier` VARCHAR(60) NOT NULL COMMENT 'Player citizenid or framework identifier',
+    `player_name` VARCHAR(100) DEFAULT 'Unknown',
+    `scene_type` VARCHAR(20) NOT NULL DEFAULT 'scene',
+    `display_data` LONGTEXT NOT NULL COMMENT 'Serialized text scene display configuration',
+    `coords` JSON NOT NULL COMMENT 'World-space scene position',
+    `rotation` JSON DEFAULT NULL COMMENT 'Optional fixed marker rotation',
+    `is_staff` TINYINT(1) NOT NULL DEFAULT 0,
+    `deleted` TINYINT(1) NOT NULL DEFAULT 0,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `expires_at` DATETIME DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    INDEX `idx_peak_text_scenes_identifier` (`identifier`),
+    INDEX `idx_peak_text_scenes_deleted_expiry` (`deleted`, `expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

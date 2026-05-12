@@ -37,6 +37,10 @@ function EraserFindTarget()
                     if ok and u >= -0.05 and u <= 1.05 and v >= -0.05 and v <= 1.05 then
                         RaycastModule.DrawRectOutline(p.corners, 0, 200, 255, 200)
 
+                        BeginTextCommandDisplayHelp("STRING")
+                        AddTextComponentSubstringPlayerName(L("eraser_prompt_start") or "Press ~g~[LMB]~s~ to start cleaning.")
+                        EndTextCommandDisplayHelp(0, false, true, -1)
+
                         if IsDisabledControlJustPressed(0, Config.Keys.EraseStroke) then
                             SprayState.paintingId = id
                             SprayState.targetPaintingCorners = p.corners
@@ -53,7 +57,8 @@ function EraserFindTarget()
             end
         end
 
-        if IsDisabledControlJustPressed(0, Config.Keys.CancelErase) then
+        if SprayState.pendingCancel or IsDisabledControlJustPressed(0, Config.Keys.CancelErase) then
+            SprayState.pendingCancel = false
             Peak.Client.Notify(L("eraser_cancelled"), "info", Config.NotifyDuration)
             FullCleanup()
             return
@@ -69,90 +74,165 @@ function EraserFindTarget()
     if found then StartEraserSession() end
 end
 
-function StartEraserSession()
-    local p = KnownPaintings[SprayState.paintingId]
-    if not p then FullCleanup() return end
+local function RestoreEraserTarget(paintingId)
+    local p = paintingId and KnownPaintings[paintingId] or nil
+    if not p then return end
 
-    SprayState.strokeCount = 0
-    SprayState.totalPoints = 0
-    SprayState.strokeHistory = {}
-    SprayState.redoStack = {}
-    SprayState.isDrawing = false
-    SprayState.brushIndex = Config.DefaultBrushSizeIndex
+    p.loaded = false
+    p.renderState = "idle"
+end
 
-    if p.renderState == "active" or p.renderState == "loading" then
-        UnloadRenderer(p)
+local function CleanupEraserSession(paintingId, hardClear)
+    RestoreEraserTarget(paintingId)
+    FullCleanup(hardClear)
+end
+
+local function AbortEraserSetup(paintingId, reason, notifyMessage)
+    SprayUtils.DebugPrint("[Eraser] Setup aborted:", reason or "unknown")
+
+    if notifyMessage and SprayState.mode == "erasing" then
+        Peak.Client.Notify(notifyMessage, "error", Config.NotifyDuration)
     end
-    p.renderState = "editing"
 
-    local timer = GetGameTimer()
-    SprayState.duiTxd = "peak_spray_erase_" .. timer .. "_dict"
-    SprayState.duiTxn = "peak_spray_erase_" .. timer
+    CleanupEraserSession(paintingId, false)
+end
 
-    local w = p.canvasWidth or Config.CanvasWidth
-    local h = p.canvasHeight or Config.CanvasHeight
-    SprayState.canvasWidth = w
-    SprayState.canvasHeight = h
-    local url = ("nui://%s/ui/dist/canvas.html?width=%d&height=%d"):format(GetCurrentResourceName(), w, h)
-
-    local dui = CreateDui(url, w, h)
-    SprayState.duiObject = dui
-
-    SetTimeout(500, function()
-        if not SprayState.duiObject then return end
-        local txdHandle = CreateRuntimeTxd(SprayState.duiTxd)
-        local handle = GetDuiHandle(dui)
-        if handle and handle ~= "" then
-            CreateRuntimeTextureFromDuiHandle(txdHandle, SprayState.duiTxn, handle)
+function StartEraserSession()
+    CreateThread(function()
+        local paintingId = SprayState.paintingId
+        local p = KnownPaintings[paintingId]
+        if not p then
+            AbortEraserSetup(paintingId, "target painting missing", L("no_painting_found"))
+            return
         end
-    end)
 
-    local strokeData = Peak.Client.TriggerCallback("peak-sprays:getStrokeData", SprayState.paintingId)
-
-    SetTimeout(400, function()
-        if not SprayState.duiObject then return end
-        SendDuiMessage(SprayState.duiObject, json.encode({ action = "init", width = w, height = h }))
-
-        SetTimeout(100, function()
-            if not SprayState.duiObject then return end
-            if strokeData then
-                SendDuiMessage(SprayState.duiObject, json.encode({ action = "loadStrokes", strokes = strokeData }))
-                SprayState.existingStrokes = strokeData
-            else
-                SprayState.existingStrokes = {}
+        local activeDui = nil
+        local function abortIfInactive(reason)
+            if SprayState.mode == "erasing" and SprayState.paintingId == paintingId then
+                return false
             end
 
-            AttachClothProp()
-            Peak.Client.LoadAnimDict(Config.EraseAnimation.dict)
-            TaskPlayAnim(PlayerPedId(), Config.EraseAnimation.dict, Config.EraseAnimation.anim, 8.0, -8.0, -1, Config.EraseAnimation.flag, 0, false, false, false)
+            RestoreEraserTarget(paintingId)
+            if activeDui and SprayState.duiObject == activeDui then
+                DestroyDui(activeDui)
+                SprayState.duiObject = nil
+            end
+            SprayUtils.DebugPrint("[Eraser] Setup stopped:", reason or "mode changed")
+            return true
+        end
 
-            SprayState.corners = SprayState.targetPaintingCorners
-            SprayState.rightAxis = SprayState.targetPaintingRight
-            SprayState.upAxis = SprayState.targetPaintingUp
-            SprayState.surfaceNormal = SprayState.targetPaintingNormal
+        SprayState.strokeCount = 0
+        SprayState.totalPoints = 0
+        SprayState.strokeHistory = {}
+        SprayState.redoStack = {}
+        SprayState.isDrawing = false
+        SprayState.brushIndex = Config.DefaultBrushSizeIndex
 
-            SendNUIMessage({
-                action = "openHUD",
-                isEraseMode = true,
-                brushSizes = Config.BrushSizes,
-                currentBrushIndex = SprayState.brushIndex,
-                pressure = 1.0,
-                pressureEnabled = false,
-                keys = {
-                    size = "SCROLL",
-                    erase = "LMB",
-                    validate = "ENTER",
-                    cancel = "DEL",
-                    undo = "Z",
-                    redo = "Y",
-                    deleteAll = "X"
-                }
-            })
+        if p.renderState == "active" or p.renderState == "loading" then
+            UnloadRenderer(p)
+        end
+        p.renderState = "editing"
 
-            CreateThread(EraserRenderLoop)
-            CreateThread(EraserInputLoop)
-            CreateThread(PaintingDistanceCheck)
+        local timer = GetGameTimer()
+        SprayState.duiTxd = "peak_spray_erase_" .. timer .. "_dict"
+        SprayState.duiTxn = "peak_spray_erase_" .. timer
+
+        local w = p.canvasWidth or Config.CanvasWidth
+        local h = p.canvasHeight or Config.CanvasHeight
+        SprayState.canvasWidth = w
+        SprayState.canvasHeight = h
+        local url = ("nui://%s/ui/dist/canvas.html?width=%d&height=%d"):format(GetCurrentResourceName(), w, h)
+
+        activeDui = CreateDui(url, w, h)
+        SprayState.duiObject = activeDui
+
+        local timeout = 2000
+        local elapsed = 0
+        while not IsDuiAvailable(activeDui) and elapsed < timeout do
+            Wait(10)
+            elapsed = elapsed + 10
+            if abortIfInactive("DUI availability wait interrupted") then return end
+        end
+
+        if not IsDuiAvailable(activeDui) then
+            AbortEraserSetup(paintingId, "DUI unavailable", "Failed to load eraser canvas.")
+            return
+        end
+
+        local txdHandle = CreateRuntimeTxd(SprayState.duiTxd)
+        local handle = GetDuiHandle(activeDui)
+        if handle and handle ~= "" then
+            CreateRuntimeTextureFromDuiHandle(txdHandle, SprayState.duiTxn, handle)
+        else
+            elapsed = 0
+            while (not handle or handle == "") and elapsed < timeout do
+                Wait(10)
+                handle = GetDuiHandle(activeDui)
+                elapsed = elapsed + 10
+                if abortIfInactive("DUI handle wait interrupted") then return end
+            end
+            if handle and handle ~= "" then
+                CreateRuntimeTextureFromDuiHandle(txdHandle, SprayState.duiTxn, handle)
+            else
+                AbortEraserSetup(paintingId, "DUI handle unavailable", "Failed to load eraser canvas.")
+                return
+            end
+        end
+
+        SendDuiMessage(SprayState.duiObject, json.encode({ action = "init", width = w, height = h }))
+        Wait(100)
+        if abortIfInactive("DUI init interrupted") then return end
+
+        local ok, strokeData = pcall(function()
+            return Peak.Client.TriggerCallback("peak-sprays:getStrokeData", paintingId)
         end)
+        if abortIfInactive("stroke load interrupted") then return end
+
+        if not ok then
+            AbortEraserSetup(paintingId, "stroke callback failed", "Failed to load eraser canvas.")
+            return
+        end
+
+        if strokeData then
+            SendDuiMessage(SprayState.duiObject, json.encode({ action = "loadStrokes", strokes = strokeData }))
+            SprayState.existingStrokes = strokeData
+        else
+            SprayState.existingStrokes = {}
+        end
+
+        AttachClothProp()
+        Peak.Client.LoadAnimDict(Config.EraseAnimation.dict)
+        if abortIfInactive("animation setup interrupted") then return end
+
+        TaskPlayAnim(PlayerPedId(), Config.EraseAnimation.dict, Config.EraseAnimation.anim, 8.0, -8.0, -1, Config.EraseAnimation.flag, 0, false, false, false)
+
+        SprayState.corners = SprayState.targetPaintingCorners
+        SprayState.rightAxis = SprayState.targetPaintingRight
+        SprayState.upAxis = SprayState.targetPaintingUp
+        SprayState.surfaceNormal = SprayState.targetPaintingNormal
+
+        SendNUIMessage({
+            action = "openHUD",
+            isEraseMode = true,
+            brushSizes = Config.BrushSizes,
+            currentBrushIndex = SprayState.brushIndex,
+            pressure = 1.0,
+            pressureEnabled = false,
+            keys = {
+                mouse = "ALT",
+                size = "SCROLL",
+                erase = "LMB",
+                validate = "ENTER",
+                cancel = "DEL",
+                undo = "Z",
+                redo = "Y",
+                deleteAll = "X"
+            }
+        })
+
+        CreateThread(EraserRenderLoop)
+        CreateThread(EraserInputLoop)
+        CreateThread(PaintingDistanceCheck)
     end)
 end
 
@@ -174,22 +254,21 @@ function EraserRenderLoop()
         end
 
         local corners = SprayState.corners
-        if corners and SprayState.duiTxd then
-            local hit, hitCoords = RaycastModule.FromCameraToPlane(SprayState.corners.bottomLeft, SprayState.surfaceNormal, Config.EraserMaxDistance)
+        if corners then
+            local hit, hitCoords, camCoord = RaycastModule.FromCameraToPlane(corners.bottomLeft, SprayState.surfaceNormal, Config.EraserMaxDistance)
             if hit then
                 local brush = Config.BrushSizes[SprayState.brushIndex]
                 local width = #(corners.bottomRight - corners.bottomLeft)
                 local canvasScale = (brush.size * 1.5) / Config.CanvasWidth * width * 0.5
-                if canvasScale < 0.01 then canvasScale = 0.01 end
 
                 local right = norm(corners.bottomRight - corners.bottomLeft)
                 local up = norm(corners.topLeft - corners.bottomLeft)
 
-                -- Circle preview
-                local segments = 24
-                local step = (2.0 * math.pi) / segments
-                for i = 0, segments - 1 do
-                    local a1, a2 = i * step, (i + 1) * step
+                -- Circle crosshair
+                local numSegments = 16
+                for i = 1, numSegments do
+                    local a1 = (i - 1) / numSegments * math.pi * 2
+                    local a2 = i / numSegments * math.pi * 2
                     local p1 = hitCoords + right * (math.cos(a1) * canvasScale) + up * (math.sin(a1) * canvasScale)
                     local p2 = hitCoords + right * (math.cos(a2) * canvasScale) + up * (math.sin(a2) * canvasScale)
                     DrawLine(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z, 0, 200, 255, 220)
@@ -228,6 +307,13 @@ function EraserInputLoop()
         if IsDisabledControlJustPressed(0, Config.Keys.ScrollUp) then CycleBrushSize(1)
         elseif IsDisabledControlJustPressed(0, Config.Keys.ScrollDown) then CycleBrushSize(-1) end
 
+        if IsDisabledControlJustPressed(0, Config.Keys.ToggleMouse) then
+            if GetGameTimer() - (SprayState.lastMouseToggleTime or 0) > 300 then
+                if ToggleNuiMouse then ToggleNuiMouse() end
+                SprayState.lastMouseToggleTime = GetGameTimer()
+            end
+        end
+
         if IsControlJustPressed(0, 73) then -- X: Delete All
             if SprayState.duiObject then
                 if SprayState.isDrawing then EndCurrentStroke() end
@@ -258,6 +344,12 @@ end
 
 function HandleCanvasEraseInput(time)
     if time - SprayState.lastStrokeTime < Config.StrokeThrottleMs then return end
+
+    if not SprayState.corners or not SprayState.surfaceNormal then
+        if SprayState.isDrawing then EndCurrentStroke() end
+        return
+    end
+
     SprayState.lastStrokeTime = time
 
     local hit, hitCoords = RaycastModule.FromCameraToPlane(SprayState.corners.bottomLeft, SprayState.surfaceNormal, Config.EraserMaxDistance)
@@ -322,48 +414,51 @@ end
 
 function ValidateErase()
     if SprayState.mode ~= "erasing" then return end
-    SprayUtils.DebugPrint("[Eraser] Validating erase, painting ID:", SprayState.paintingId)
+    local paintingId = SprayState.paintingId
+    SprayUtils.DebugPrint("[Eraser] Validating erase, painting ID:", paintingId)
 
     SprayState.mode = "saving"
     if SprayState.isDrawing then EndCurrentStroke() end
     ClearPedTasks(PlayerPedId())
 
-    local p = KnownPaintings[SprayState.paintingId]
-    if p then p.renderState = "idle" end
-
-    local allStrokes = SprayState.existingStrokes or {}
+    local allStrokes = {}
+    if SprayState.existingStrokes then
+        for _, s in ipairs(SprayState.existingStrokes) do
+            table.insert(allStrokes, s)
+        end
+    end
     for _, s in ipairs(SprayState.strokeHistory) do
         table.insert(allStrokes, s)
     end
 
     local data = {
-        paintingId = SprayState.paintingId,
+        paintingId = paintingId,
         strokeData = allStrokes,
         strokeCount = #allStrokes
     }
 
-    local result = Peak.Client.TriggerCallback("peak-sprays:updatePainting", data)
+    local ok, result = pcall(function()
+        return Peak.Client.TriggerCallback("peak-sprays:updatePainting", data)
+    end)
+
     if result and result.success then
         Peak.Client.Notify(L("eraser_saved"), "success", Config.NotifyDuration)
-        if OnSprayRemoved then OnSprayRemoved(SprayState.paintingId) end
+        if OnSprayRemoved then OnSprayRemoved(paintingId) end
     else
-        Peak.Client.Notify(result and result.message or "Error saving", "error", Config.NotifyDuration)
+        Peak.Client.Notify(ok and result and result.message or "Error saving", "error", Config.NotifyDuration)
     end
 
-    FullCleanup()
+    CleanupEraserSession(paintingId, false)
 end
 
-function CancelErase()
+function CancelErase(autoDistance)
     if SprayState.mode ~= "erasing" then return end
+    local paintingId = SprayState.paintingId
     SprayState.mode = "saving"
     if SprayState.isDrawing then EndCurrentStroke() end
     ClearPedTasks(PlayerPedId())
 
     Peak.Client.Notify(L("eraser_cancelled"), "info", Config.NotifyDuration)
-    local p = KnownPaintings[SprayState.paintingId]
-    if p then
-        p.loaded = false
-        p.renderState = "idle"
-    end
-    FullCleanup()
+
+    CleanupEraserSession(paintingId, false)
 end
