@@ -1,7 +1,7 @@
 # Peak Sprays
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](version.json)
+[![Version](https://img.shields.io/badge/version-0.2.1-blue.svg)](version.json)
 [![Discord](https://img.shields.io/badge/Discord-Peak_Studios-7289DA.svg)](https://discord.gg/gAqXUaVEMn)
 
 Peak Sprays is a premium open-source FiveM resource for persistent in-world spray painting, text scenes, and signs. Players can paint on DUI canvases or place styled text/sign surfaces that are saved to SQL and rendered back into the world for nearby players.
