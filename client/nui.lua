@@ -1,14 +1,28 @@
 RegisterNUICallback("releaseMouse", function(_, cb)
-    SetNuiFocus(false, false)
-    SetNuiFocusKeepInput(false)
-    if SprayState then SprayState._nuiMouseActive = false end
+    if SetSprayMouseFocus then
+        SetSprayMouseFocus(false)
+    else
+        SetNuiFocus(false, false)
+        SetNuiFocusKeepInput(false)
+        if SprayState then
+            SprayState._nuiMouseActive = false
+            SprayState._altMouseHeld = false
+        end
+    end
     cb({ success = true })
 end)
 
 RegisterNUICallback("confirmSpray", function(_, cb)
-    SetNuiFocus(false, false)
-    SetNuiFocusKeepInput(false)
-    if SprayState then SprayState._nuiMouseActive = false end
+    if SetSprayMouseFocus then
+        SetSprayMouseFocus(false)
+    else
+        SetNuiFocus(false, false)
+        SetNuiFocusKeepInput(false)
+        if SprayState then
+            SprayState._nuiMouseActive = false
+            SprayState._altMouseHeld = false
+        end
+    end
 
     if SprayState and (SprayState.mode == "painting" or SprayState.mode == "erasing") then
         SprayState.pendingCancel = false
@@ -18,9 +32,16 @@ RegisterNUICallback("confirmSpray", function(_, cb)
 end)
 
 RegisterNUICallback("cancelSpray", function(_, cb)
-    SetNuiFocus(false, false)
-    SetNuiFocusKeepInput(false)
-    if SprayState then SprayState._nuiMouseActive = false end
+    if SetSprayMouseFocus then
+        SetSprayMouseFocus(false)
+    else
+        SetNuiFocus(false, false)
+        SetNuiFocusKeepInput(false)
+        if SprayState then
+            SprayState._nuiMouseActive = false
+            SprayState._altMouseHeld = false
+        end
+    end
 
     if SprayState and (SprayState.mode == "selecting" or SprayState.mode == "painting" or SprayState.mode == "erasing") then
         SprayState.pendingValidate = false

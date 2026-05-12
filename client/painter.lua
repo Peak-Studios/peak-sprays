@@ -14,6 +14,11 @@ function StartPaintingMode()
     SprayState.redoStack = {}
     SprayState.isDrawing = false
     SprayState.density = Config.DefaultDensity or 0.7
+    SprayState.styleIndex = Config.DefaultPaintStyleIndex or 1
+    SprayState.stencilIndex = 1
+    SprayState.dwellTime = 0
+    SprayState.lastPos = nil
+    SprayState.lastDripTime = 0
 
     activeDuiId = activeDuiId + 1
     SprayState.duiTxd = "peak_spray_active_" .. activeDuiId .. "_dict"
@@ -88,6 +93,10 @@ function StartPaintingMode()
         density = SprayState.density,
         pressureEnabled = Config.PressureEnabled,
         importExportEnabled = Config.ImportExportEnabled,
+        paintStyles = Config.PaintStyles,
+        currentStyleIndex = SprayState.styleIndex,
+        stencils = Config.Stencils,
+        currentStencilIndex = SprayState.stencilIndex,
         keys = {
             mouse = "ALT",
             shake = "G",
@@ -129,6 +138,9 @@ function PaintingControlDisableLoop()
         for _, control in ipairs({0, 24, 25, 44, 37, 47, 58, 69, 75, 91, 92, 114, 140, 141, 142, 257, 263, 264, 172, 173, 19}) do
             DisableControlAction(0, control, true)
         end
+        if SprayState._nuiMouseActive then
+            DisableSprayCameraLook()
+        end
         DisablePlayerFiring(ped, true)
     end
 end
@@ -150,11 +162,14 @@ function PaintingRenderLoop()
                 end
 
                 local brush = Config.BrushSizes[SprayState.brushIndex]
+                local style = Config.PaintStyles[SprayState.styleIndex] or Config.PaintStyles[Config.DefaultPaintStyleIndex or 1] or { id = "spray" }
+                
                 local visualSize = brush.size * spreadMult
+                if style.id == 'pen' then visualSize = math.max(2.0, brush.size * 0.25) end
 
                 -- Draw crosshair/brush preview
                 local width = #(corners.bottomRight - corners.bottomLeft)
-                local canvasScale = visualSize / Config.CanvasWidth * width * 0.5
+                local canvasScale = visualSize / (SprayState.canvasWidth or Config.CanvasWidth) * width * 0.5
                 if canvasScale < 0.005 then canvasScale = 0.005 end
 
                 local right = norm(corners.bottomRight - corners.bottomLeft)
@@ -205,13 +220,13 @@ function PaintingInputLoop()
         local time = GetGameTimer()
 
         if IsDisabledControlJustPressed(0, Config.Keys.ToggleMouse) then
-            if GetGameTimer() - (SprayState.lastMouseToggleTime or 0) > 300 then
-                ToggleNuiMouse()
-                SprayState.lastMouseToggleTime = GetGameTimer()
-            end
+            SetSprayMouseFocus(true)
+        elseif SprayState._altMouseHeld and not IsDisabledControlPressed(0, Config.Keys.ToggleMouse) then
+            SetSprayMouseFocus(false)
         end
 
         if SprayState._nuiMouseActive then
+            DisableSprayCameraLook()
             if SprayState.isDrawing then
                 EndCurrentStroke()
                 SprayState._eraseMode = false
@@ -223,6 +238,8 @@ function PaintingInputLoop()
                 if SprayState.isDrawing and not SprayState._eraseMode then
                     EndCurrentStroke()
                 end
+                SprayState.dwellTime = 0
+                SprayState.lastPos = nil
             end
 
             if IsDisabledControlPressed(0, 25) then
@@ -248,6 +265,7 @@ function PaintingInputLoop()
         end
 
         if SprayState.pendingValidate then
+            if SprayState.isDrawing then EndCurrentStroke() end
             SprayState.pendingValidate = false
             SprayState.pendingCancel = false
             ValidatePainting()
@@ -255,6 +273,7 @@ function PaintingInputLoop()
         end
 
         if SprayState.pendingCancel then
+            if SprayState.isDrawing then EndCurrentStroke() end
             SprayState.pendingCancel = false
             CancelPainting()
             return
@@ -267,7 +286,7 @@ end
 -- ============================================================
 
 function HandlePaintInput(time)
-    if time - SprayState.lastStrokeTime < Config.StrokeThrottleMs then return end
+    if time - SprayState.lastStrokeTime < (Config.StrokeThrottleMs or 16) then return end
     SprayState.lastStrokeTime = time
 
     local hit, hitCoords = RaycastModule.FromCameraToPlane(SprayState.corners.bottomLeft, SprayState.surfaceNormal, Config.PaintMaxDistance)
@@ -299,10 +318,63 @@ function HandlePaintInput(time)
     end
 
     local brush = Config.BrushSizes[SprayState.brushIndex]
+    local style = Config.PaintStyles[SprayState.styleIndex] or Config.PaintStyles[Config.DefaultPaintStyleIndex or 1] or { id = "spray" }
+    local styleId = style.id or "spray"
+    
     local size = math.floor(brush.size * spreadMult)
     local density = SprayState.density or 0.7
     local scatterCount = math.max(1, math.floor(brush.sprayDensity * spreadMult * density))
     local finalPressure = pressure
+    local finalScatter = density
+
+    -- Style overrides
+    if styleId == 'pen' then
+        size = math.max(2, math.floor((brush.size * 0.18) + 1))
+        finalScatter = 0.0
+        scatterCount = 1
+    elseif styleId == 'calligraphy' then
+        -- Varies size based on movement direction
+        if SprayState.lastPos then
+            local dx = x - SprayState.lastPos.x
+            local dy = y - SprayState.lastPos.y
+            local angle = math.abs(math.atan2(dy, dx))
+            size = math.max(3, math.floor(size * (0.45 + 0.75 * math.abs(math.sin(angle + 0.8)))))
+        end
+        finalScatter = 0.0
+        scatterCount = 1
+    elseif styleId == 'splatter' then
+        size = math.floor(size * 1.35)
+        finalScatter = SprayUtils.Clamp(density * 1.35, 0.35, 1.35)
+        scatterCount = math.max(4, math.floor(scatterCount * 0.8))
+        finalPressure = pressure * (0.7 + 0.3 * math.random())
+    elseif styleId == 'airbrush' then
+        finalScatter = SprayUtils.Clamp(density * 1.6, 0.45, 1.6)
+        finalPressure = pressure * 0.55
+        scatterCount = math.max(3, math.floor(scatterCount * 0.9))
+    elseif styleId == 'drip' then
+        finalScatter = SprayUtils.Clamp(density * 0.22, 0.08, 0.28)
+        scatterCount = math.max(2, math.floor(scatterCount * 0.22))
+        -- Drip logic: check if dwelling
+        local tolerance = Config.DripTolerance or 15.0
+        if SprayState.lastPos and #(vec2(x, y) - SprayState.lastPos) < tolerance then
+            SprayState.dwellTime = SprayState.dwellTime + (Config.StrokeThrottleMs or 16)
+            local dripCooldown = math.max(650, math.floor((Config.DripThresholdMs or 400) * 1.8))
+            if SprayState.dwellTime > (Config.DripThresholdMs or 400)
+            and time - (SprayState.lastDripTime or 0) > dripCooldown then
+                TriggerDrip(x, y, size, finalPressure)
+                SprayState.lastDripTime = time
+                SprayState.dwellTime = 0 -- Reset to allow next drip
+            end
+        else
+            SprayState.dwellTime = 0
+        end
+        SprayState.lastPos = vec2(x, y)
+    elseif styleId == 'stencil' then
+        if IsDisabledControlJustPressed(0, 24) then
+            TriggerStencil(x, y, size)
+        end
+        return -- Stencil handles its own stroke
+    end
 
     if not SprayState.isDrawing then
         if SprayState.strokeCount >= Config.MaxStrokesPerPainting then
@@ -316,37 +388,40 @@ function HandlePaintInput(time)
 
         local newStroke = {
             type = "paint",
+            style = styleId,
             color = SprayState.currentColor,
             size = size,
             density = scatterCount,
             pressure = finalPressure,
-            scatter = density,
+            scatter = finalScatter,
             points = {{ x = x, y = y }}
         }
         table.insert(SprayState.strokeHistory, newStroke)
+        SprayState.activeStrokeIndex = #SprayState.strokeHistory
         SprayState.strokeCount = SprayState.strokeCount + 1
 
         SendDuiMessage(SprayState.duiObject, json.encode({
             action = "startStroke",
             type = "paint",
+            style = styleId,
             x = x,
             y = y,
             color = SprayState.currentColor,
             size = size,
             density = scatterCount,
             pressure = finalPressure,
-            scatter = density
+            scatter = finalScatter
         }))
         StartSpraySound()
         StartSprayParticle(SprayState.currentColor)
     else
-        local currentStroke = SprayState.strokeHistory[#SprayState.strokeHistory]
+        local currentStroke = SprayState.strokeHistory[SprayState.activeStrokeIndex or #SprayState.strokeHistory]
         if currentStroke then
-            if #currentStroke.points >= Config.MaxPointsPerStroke then
+            if #currentStroke.points >= (Config.MaxPointsPerStroke or 5000) then
                 EndCurrentStroke()
                 return
             end
-            if SprayState.totalPoints >= Config.MaxTotalPoints then
+            if SprayState.totalPoints >= (Config.MaxTotalPoints or 50000) then
                 Peak.Client.Notify(L("max_points_reached"), "warning", 3000)
                 EndCurrentStroke()
                 return
@@ -361,14 +436,128 @@ function HandlePaintInput(time)
                 y = y,
                 pressure = finalPressure,
                 size = size,
-                density = scatterCount
+                density = scatterCount,
+                scatter = finalScatter
             }))
         end
     end
+    
+    if styleId ~= 'drip' then
+        SprayState.lastPos = vec2(x, y)
+    end
+end
+
+function TriggerDrip(startX, startY, size, pressure)
+    if SprayState.strokeCount >= Config.MaxStrokesPerPainting then return end
+
+    local canvasW = SprayState.canvasWidth or Config.CanvasWidth
+    local canvasH = SprayState.canvasHeight or Config.CanvasHeight
+    local dripSize = math.max(2, math.floor(math.min(size * 0.34, 7.0)))
+    local bottomPadding = math.max(4, dripSize * 1.6)
+    local availableLen = math.floor(canvasH - startY - bottomPadding)
+    local minLen = math.max(10, math.floor(size * 0.75))
+    if availableLen < minLen then return end
+
+    local maxLen = math.min(Config.DripMaxLen or 180, math.floor(34 + size * 2.2), availableLen)
+    if maxLen < minLen then return end
+
+    local dripLen = math.random(minLen, maxLen)
+    local dripPoints = {}
+    local step = math.max(5, Config.DripSpeed or 5.0)
+    local phase = math.random() * 6.28318
+    local drift = (math.random() - 0.5) * math.min(5.0, size * 0.22)
+
+    for i = 0, dripLen, step do
+        local t = i / dripLen
+        local wobble = math.sin(t * 6.0 + phase) * math.min(1.4, size * 0.06)
+        local offsetX = drift * t + wobble + ((math.random() - 0.5) * 0.35)
+        local px = SprayUtils.Clamp(startX + offsetX, dripSize, canvasW - dripSize)
+        local py = SprayUtils.Clamp(startY + i, dripSize, canvasH - bottomPadding)
+        table.insert(dripPoints, { x = px, y = py, t = t })
+    end
+
+    if dripPoints[#dripPoints] and dripPoints[#dripPoints].t < 1.0 then
+        local px = SprayUtils.Clamp(startX + drift, dripSize, canvasW - dripSize)
+        local py = SprayUtils.Clamp(startY + dripLen, dripSize, canvasH - bottomPadding)
+        table.insert(dripPoints, { x = px, y = py, t = 1.0 })
+    end
+
+    if #dripPoints < 2 then return end
+    if SprayState.totalPoints + #dripPoints > (Config.MaxTotalPoints or 50000) then return end
+    
+    local dripStroke = {
+        type = "paint",
+        style = "drip-run",
+        color = SprayState.currentColor,
+        size = dripSize,
+        density = 1,
+        pressure = pressure * 0.7,
+        scatter = 0.0,
+        points = dripPoints
+    }
+    
+    table.insert(SprayState.strokeHistory, dripStroke)
+    SprayState.strokeCount = SprayState.strokeCount + 1
+    SprayState.totalPoints = SprayState.totalPoints + #dripPoints
+    
+    SendDuiMessage(SprayState.duiObject, json.encode({
+        action = "drawStroke",
+        stroke = dripStroke
+    }))
+
+    -- Update UI stroke count
+    SendNUIMessage({
+        action = "strokeUpdate",
+        strokeCount = SprayState.strokeCount,
+        maxStrokes = Config.MaxStrokesPerPainting,
+        canUndo = true,
+        canRedo = false
+    })
+end
+
+function TriggerStencil(x, y, size)
+    local stencil = Config.Stencils[SprayState.stencilIndex]
+    if not stencil then return end
+    
+    if SprayState.strokeCount >= Config.MaxStrokesPerPainting then return end
+    
+    local stencilPoints = {}
+    for _, p in ipairs(stencil.points) do
+        table.insert(stencilPoints, { x = x + p.x * (size/10), y = y + p.y * (size/10) })
+    end
+    
+    local stencilStroke = {
+        type = "stencil",
+        color = SprayState.currentColor,
+        size = size,
+        points = stencilPoints,
+        pressure = 1.0
+    }
+    
+    table.insert(SprayState.strokeHistory, stencilStroke)
+    SprayState.strokeCount = SprayState.strokeCount + 1
+    SprayState.totalPoints = SprayState.totalPoints + #stencilPoints
+    
+    SendDuiMessage(SprayState.duiObject, json.encode({
+        action = "stampStencil",
+        x = x,
+        y = y,
+        size = size,
+        color = SprayState.currentColor,
+        points = stencil.points
+    }))
+    
+    SendNUIMessage({
+        action = "strokeUpdate",
+        strokeCount = SprayState.strokeCount,
+        maxStrokes = Config.MaxStrokesPerPainting,
+        canUndo = true,
+        canRedo = false
+    })
 end
 
 function HandleEraseInput(time)
-    if time - SprayState.lastStrokeTime < Config.StrokeThrottleMs then return end
+    if time - SprayState.lastStrokeTime < (Config.StrokeThrottleMs or 16) then return end
     SprayState.lastStrokeTime = time
 
     local hit, hitCoords = RaycastModule.FromCameraToPlane(SprayState.corners.bottomLeft, SprayState.surfaceNormal, Config.PaintMaxDistance)
@@ -425,7 +614,7 @@ function HandleEraseInput(time)
     else
         local currentStroke = SprayState.strokeHistory[#SprayState.strokeHistory]
         if currentStroke then
-            if SprayState.totalPoints >= Config.MaxTotalPoints then
+            if SprayState.totalPoints >= (Config.MaxTotalPoints or 50000) then
                 EndCurrentStroke()
                 SprayState._eraseMode = false
                 return
@@ -446,6 +635,7 @@ end
 function EndCurrentStroke()
     if not SprayState.isDrawing then return end
     SprayState.isDrawing = false
+    SprayState.activeStrokeIndex = nil
 
     if SprayState.duiObject then
         SendDuiMessage(SprayState.duiObject, json.encode({ action = "endStroke" }))
@@ -481,8 +671,8 @@ function ValidatePainting()
         corners = SprayUtils.CornersToTable(SprayState.corners),
         normal = SprayUtils.Vec3ToTable(SprayState.surfaceNormal),
         strokeData = SprayState.strokeHistory,
-        canvasWidth = Config.CanvasWidth,
-        canvasHeight = Config.CanvasHeight,
+        canvasWidth = SprayState.canvasWidth or Config.CanvasWidth,
+        canvasHeight = SprayState.canvasHeight or Config.CanvasHeight,
         worldX = center.x,
         worldY = center.y,
         worldZ = center.z,
@@ -644,11 +834,31 @@ end
 -- ============================================================
 
 SprayState._nuiMouseActive = false
+SprayState._altMouseHeld = false
+
+function DisableSprayCameraLook()
+    for _, control in ipairs({1, 2, 3, 4, 5, 6, 106}) do
+        DisableControlAction(0, control, true)
+    end
+end
+
+function SetSprayMouseFocus(active)
+    active = active == true
+    if SprayState._nuiMouseActive == active and SprayState._altMouseHeld == active then return end
+
+    SetNuiFocus(active, active)
+    SetNuiFocusKeepInput(active)
+    SprayState._nuiMouseActive = active
+    SprayState._altMouseHeld = active
+
+    if active and SprayState.isDrawing then
+        EndCurrentStroke()
+        SprayState._eraseMode = false
+    end
+end
+
 function ToggleNuiMouse()
-    local shouldFocus = not SprayState._nuiMouseActive
-    SetNuiFocus(shouldFocus, shouldFocus)
-    SetNuiFocusKeepInput(shouldFocus)
-    SprayState._nuiMouseActive = shouldFocus
+    SetSprayMouseFocus(not SprayState._nuiMouseActive)
 end
 
 function PaintingDistanceCheck()
@@ -659,7 +869,7 @@ function PaintingDistanceCheck()
             local center = SprayUtils.GetCenterFromCorners(SprayState.corners)
             local dist = #(pedCoords - center)
 
-            if dist > Config.AutoSaveDistance then
+            if dist > (Config.AutoSaveDistance or 15.0) then
                 if SprayState.mode == "painting" then
                     Peak.Client.Notify(L("painting_auto_saved"), "info", Config.NotifyDuration)
                     ValidatePainting()
@@ -690,6 +900,26 @@ function StartLivePreviewLoop()
         end
     end)
 end
+
+-- ============================================================
+-- NUI CALLBACKS
+-- ============================================================
+
+RegisterNUICallback('changeStyle', function(data, cb)
+    if data.index then
+        SprayState.styleIndex = data.index
+        SprayUtils.DebugPrint("[Paint] Style changed to: " .. data.index)
+    end
+    cb('ok')
+end)
+
+RegisterNUICallback('changeStencil', function(data, cb)
+    if data.index then
+        SprayState.stencilIndex = data.index
+        SprayUtils.DebugPrint("[Paint] Stencil changed to: " .. data.index)
+    end
+    cb('ok')
+end)
 
 -- ============================================================
 -- KEY MAPPINGS

@@ -331,6 +331,7 @@ function FullCleanup(hardClear)
     SetNuiFocus(false, false)
     SetNuiFocusKeepInput(false)
     SprayState._nuiMouseActive = false
+    SprayState._altMouseHeld = false
     SendNUIMessage({ action = "closeHUD" })
 end
 

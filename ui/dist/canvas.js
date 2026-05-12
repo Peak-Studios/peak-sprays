@@ -1,54 +1,73 @@
 /**
  * Peak Sprays - Canvas DUI Drawing Engine
- * Faithfully reconstructed from the original canvas-BSy6Z3YE.js
  *
- * Receives messages via SendDuiMessage() from painting.lua (client/painting.lua).
- * The canvas is projected onto the game world via CreateDui + DrawSpritePoly.
+ * Receives messages via SendDuiMessage() from client Lua and renders
+ * persistent spray strokes onto the projected DUI canvas.
  */
 ; (function () {
   const canvas = document.getElementById('sprayCanvas')
   const ctx = canvas.getContext('2d', { willReadFrequently: false })
 
-  // ─── State ────────────────────────────────────────────────────────────
-  let canvasW = 1024   // set by 'init'
+  let canvasW = 1024
   let canvasH = 1024
-  let strokes = []     // committed stroke history (undo stack)
-  let redoStack = []     // redo buffer
-  let activeStroke = null // the stroke currently being drawn
+  let strokes = []
+  let redoStack = []
+  let activeStroke = null
   let isDrawing = false
-
-  // offscreen scratch canvas (created on init, unused after – original creates it but never draws on it)
   let offscreen = null
-
-  // Snapshot stack for pixel-exact undo
   let snapshots = []
 
-  // ─── Snapshot ─────────────────────────────────────────────────────────
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value))
+  }
+
+  function hexToRgb(color) {
+    const hex = typeof color === 'string' && color[0] === '#' ? color : '#000000'
+    return {
+      r: parseInt(hex.slice(1, 3), 16) || 0,
+      g: parseInt(hex.slice(3, 5), 16) || 0,
+      b: parseInt(hex.slice(5, 7), 16) || 0,
+    }
+  }
+
   function takeSnapshot() {
     const img = ctx.getImageData(0, 0, canvasW, canvasH)
     snapshots.push(img)
     if (snapshots.length > 100) snapshots.shift()
   }
 
-  // ─── Drawing primitives ───────────────────────────────────────────────
-
-  /** Hard filled circle */
   function drawDot(x, y, size, color, pressure) {
     ctx.save()
-    ctx.globalAlpha = Math.min(1, 0.9 * pressure + 0.1)
+    ctx.globalAlpha = clamp(0.9 * (pressure || 1) + 0.1, 0, 1)
     ctx.fillStyle = color
     ctx.beginPath()
-    ctx.arc(x, y, 0.5 * size, 0, 2 * Math.PI)
+    ctx.arc(x, y, Math.max(0.5, 0.5 * size), 0, 2 * Math.PI)
     ctx.fill()
     ctx.restore()
   }
 
-  /** Hard line segment */
+  function drawSoftDot(x, y, size, color, pressure, softness) {
+    const radius = Math.max(1, size * 0.5)
+    const rgb = hexToRgb(color)
+    const alpha = clamp((pressure || 1) * 0.55, 0.04, 0.9)
+    const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius)
+    gradient.addColorStop(0, `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`)
+    gradient.addColorStop(clamp(softness || 0.55, 0.15, 0.9), `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha * 0.35})`)
+    gradient.addColorStop(1, `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0)`)
+
+    ctx.save()
+    ctx.fillStyle = gradient
+    ctx.beginPath()
+    ctx.arc(x, y, radius, 0, 2 * Math.PI)
+    ctx.fill()
+    ctx.restore()
+  }
+
   function drawLine(x1, y1, x2, y2, size, color, pressure) {
     ctx.save()
-    ctx.globalAlpha = Math.min(1, 0.9 * pressure + 0.1)
+    ctx.globalAlpha = clamp(0.9 * (pressure || 1) + 0.1, 0, 1)
     ctx.strokeStyle = color
-    ctx.lineWidth = size
+    ctx.lineWidth = Math.max(0.75, size)
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
     ctx.beginPath()
@@ -58,77 +77,168 @@
     ctx.restore()
   }
 
-  /**
-   * Gaussian scatter cloud (Box-Muller transform).
-   * Matches the original 'f' function exactly.
-   */
-  function drawScatter(cx, cy, radius, count, color, pressure) {
+  function drawVariableLine(x1, y1, x2, y2, size1, size2, color, pressure) {
+    const segLen = Math.hypot(x2 - x1, y2 - y1)
+    const steps = Math.max(1, Math.ceil(segLen / Math.max(1.5, Math.min(size1, size2))))
+    for (let i = 1; i <= steps; i++) {
+      const t0 = (i - 1) / steps
+      const t1 = i / steps
+      const w = size1 + (size2 - size1) * t1
+      drawLine(
+        x1 + (x2 - x1) * t0,
+        y1 + (y2 - y1) * t0,
+        x1 + (x2 - x1) * t1,
+        y1 + (y2 - y1) * t1,
+        w,
+        color,
+        pressure
+      )
+    }
+  }
+
+  function drawScatter(cx, cy, radius, count, color, pressure, minDot, maxDot) {
     if (count <= 0) return
-    const r = parseInt(color.slice(1, 3), 16)
-    const g = parseInt(color.slice(3, 5), 16)
-    const b = parseInt(color.slice(5, 7), 16)
+    const rgb = hexToRgb(color)
+    const spread = Math.max(0.5, radius)
     for (let i = 0; i < count; i++) {
       const u1 = Math.random()
       const u2 = Math.random()
       const mag = Math.sqrt(-2 * Math.log(u1 + 1e-4))
-      const px = cx + mag * Math.cos(2 * Math.PI * u2) * radius * 0.45
-      const py = cy + mag * Math.sin(2 * Math.PI * u2) * radius * 0.45
-      const dotR = 0.5 + 1.5 * Math.random()
-      const alpha = pressure * (0.3 + 0.7 * Math.random())
+      const px = cx + mag * Math.cos(2 * Math.PI * u2) * spread * 0.45
+      const py = cy + mag * Math.sin(2 * Math.PI * u2) * spread * 0.45
+      const dotR = (minDot || 0.5) + ((maxDot || 2.0) - (minDot || 0.5)) * Math.random()
+      const alpha = clamp((pressure || 1) * (0.25 + 0.65 * Math.random()), 0, 1)
       ctx.beginPath()
       ctx.arc(px, py, dotR, 0, 2 * Math.PI)
-      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`
+      ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`
       ctx.fill()
     }
   }
 
-  /** Render a spray dot at a single point (start of stroke) — 'p' function */
-  function renderSprayDot(x, y, size, density, color, pressure, scatter) {
+  function renderLegacySprayDot(x, y, size, density, color, pressure, scatter) {
     if (scatter <= 0.05) {
       drawDot(x, y, size, color, pressure)
     } else if (scatter < 0.3) {
       drawDot(x, y, size, color, 0.8 * pressure)
       drawScatter(x, y, 0.5 * size, Math.floor(density * scatter * 0.5), color, 0.3 * pressure)
     } else {
-      // full scatter
       drawScatter(x, y, size, Math.floor(density * scatter * 1.5), color, 0.8 * pressure)
     }
   }
 
-  /** Render a spray segment between two points — 'y' function */
-  function renderSpraySegment(x1, y1, x2, y2, size, density, color, pressure, scatter) {
+  function renderLegacySpraySegment(x1, y1, x2, y2, size, density, color, pressure, scatter) {
     if (scatter <= 0.05) {
       drawLine(x1, y1, x2, y2, size, color, pressure)
-    } else if (scatter < 0.3) {
+      return
+    }
+
+    const segLen = Math.hypot(x2 - x1, y2 - y1)
+    if (scatter < 0.3) {
       drawLine(x1, y1, x2, y2, size, color, pressure * (1 - scatter))
-      const segLen = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
       const steps = Math.max(1, Math.floor(segLen / (0.5 * size)))
       for (let i = 0; i <= steps; i++) {
         const t = steps === 0 ? 0 : i / steps
-        drawScatter(
-          x1 + (x2 - x1) * t, y1 + (y2 - y1) * t,
-          size * scatter,
-          Math.floor(density * scatter * 0.3),
-          color, pressure * scatter
-        )
+        drawScatter(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t, size * scatter, Math.floor(density * scatter * 0.3), color, pressure * scatter)
       }
-    } else {
-      // full scatter along segment
-      const segLen = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-      const steps = Math.max(1, Math.floor(segLen / (0.3 * size)))
-      for (let i = 0; i <= steps; i++) {
-        const t = steps === 0 ? 0 : i / steps
-        drawScatter(
-          x1 + (x2 - x1) * t, y1 + (y2 - y1) * t,
-          size,
-          Math.floor(density * pressure),
-          color, 0.7 * pressure
-        )
-      }
+      return
+    }
+
+    const steps = Math.max(1, Math.floor(segLen / (0.3 * size)))
+    for (let i = 0; i <= steps; i++) {
+      const t = steps === 0 ? 0 : i / steps
+      drawScatter(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t, size, Math.floor(density * pressure), color, 0.7 * pressure)
     }
   }
 
-  /** Erase a circle at a point — 'g' function */
+  function renderStyledDot(stroke, point) {
+    const style = stroke.style || 'spray'
+    const size = Math.max(1, stroke.size || 10)
+    const density = Math.max(1, stroke.density || 25)
+    const pressure = stroke.pressure || 0.8
+    const color = stroke.color || '#000000'
+    const scatter = stroke.scatter !== undefined ? stroke.scatter : 1
+
+    if (style === 'pen') {
+      drawDot(point.x, point.y, size, color, pressure)
+    } else if (style === 'calligraphy') {
+      drawDot(point.x, point.y, size * 0.9, color, pressure)
+    } else if (style === 'splatter') {
+      drawScatter(point.x, point.y, size * 1.25, Math.ceil(density * 1.25), color, pressure, size * 0.08, size * 0.32)
+      drawDot(point.x, point.y, size * 0.35, color, pressure * 0.65)
+    } else if (style === 'airbrush') {
+      drawSoftDot(point.x, point.y, size * 2.2, color, pressure, 0.45)
+      drawScatter(point.x, point.y, size * 0.9, Math.ceil(density * 0.25), color, pressure * 0.25, 0.4, 1.2)
+    } else if (style === 'drip') {
+      drawDot(point.x, point.y, size * 0.75, color, pressure)
+      drawScatter(point.x, point.y, size * 0.35, Math.ceil(density * 0.18), color, pressure * 0.25, 0.35, 1.0)
+    } else if (style === 'drip-run') {
+      drawDot(point.x, point.y, size * 0.75, color, pressure)
+    } else {
+      renderLegacySprayDot(point.x, point.y, size, density, color, pressure, scatter)
+    }
+  }
+
+  function renderStyledSegment(stroke, prev, point, index, total) {
+    const style = stroke.style || 'spray'
+    const size = Math.max(1, stroke.size || 10)
+    const density = Math.max(1, stroke.density || 25)
+    const pressure = stroke.pressure || 0.8
+    const color = stroke.color || '#000000'
+    const scatter = stroke.scatter !== undefined ? stroke.scatter : 1
+    const segLen = Math.hypot(point.x - prev.x, point.y - prev.y)
+
+    if (style === 'pen') {
+      drawLine(prev.x, prev.y, point.x, point.y, size, color, pressure)
+    } else if (style === 'calligraphy') {
+      const a = Math.atan2(point.y - prev.y, point.x - prev.x)
+      const w1 = Math.max(2, size * (0.55 + 0.45 * Math.abs(Math.sin(a + 0.8))))
+      const w2 = Math.max(2, size * (0.5 + 0.5 * Math.abs(Math.sin(a + 1.05))))
+      drawVariableLine(prev.x, prev.y, point.x, point.y, w1, w2, color, pressure)
+    } else if (style === 'splatter') {
+      const steps = Math.max(1, Math.ceil(segLen / Math.max(4, size * 0.55)))
+      for (let i = 0; i <= steps; i++) {
+        const t = steps === 0 ? 0 : i / steps
+        drawScatter(prev.x + (point.x - prev.x) * t, prev.y + (point.y - prev.y) * t, size * 1.15, Math.ceil(density * 0.55), color, pressure, size * 0.06, size * 0.28)
+      }
+    } else if (style === 'airbrush') {
+      const steps = Math.max(1, Math.ceil(segLen / Math.max(3, size * 0.35)))
+      for (let i = 0; i <= steps; i++) {
+        const t = steps === 0 ? 0 : i / steps
+        drawSoftDot(prev.x + (point.x - prev.x) * t, prev.y + (point.y - prev.y) * t, size * 2.0, color, pressure, 0.5)
+      }
+    } else if (style === 'drip') {
+      drawLine(prev.x, prev.y, point.x, point.y, size * 0.58, color, pressure * 0.9)
+      if (density > 1) {
+        const steps = Math.max(1, Math.ceil(segLen / Math.max(6, size * 1.3)))
+        for (let i = 0; i <= steps; i++) {
+          const t = steps === 0 ? 0 : i / steps
+          drawScatter(
+            prev.x + (point.x - prev.x) * t,
+            prev.y + (point.y - prev.y) * t,
+            size * 0.42,
+            Math.ceil(density * scatter * 0.18),
+            color,
+            pressure * 0.24,
+            0.35,
+            1.0
+          )
+        }
+      }
+    } else if (style === 'drip-run') {
+      const t = point.t !== undefined ? point.t : index / Math.max(1, total - 1)
+      const baseWidth = Math.min(size, 7)
+      const w1 = Math.max(0.85, baseWidth * (0.82 - clamp(t, 0, 1) * 0.42))
+      const w2 = Math.max(0.65, baseWidth * (0.76 - clamp(t + 0.08, 0, 1) * 0.48))
+      drawVariableLine(prev.x, prev.y, point.x, point.y, w1, w2, color, pressure)
+      if (t >= 0.98 || (index === total - 1 && total > 2 && point.t === undefined)) {
+        drawDot(point.x, point.y, baseWidth * 0.95, color, pressure * 0.9)
+        drawSoftDot(point.x, point.y, baseWidth * 1.45, color, pressure * 0.28, 0.35)
+      }
+    } else {
+      renderLegacySpraySegment(prev.x, prev.y, point.x, point.y, size, density, color, pressure, scatter)
+    }
+  }
+
   function eraseCircle(x, y, radius) {
     ctx.save()
     ctx.beginPath()
@@ -138,9 +248,8 @@
     ctx.restore()
   }
 
-  /** Erase along a segment — 'M' function */
   function eraseSegment(x1, y1, x2, y2, radius) {
-    const segLen = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+    const segLen = Math.hypot(x2 - x1, y2 - y1)
     const steps = Math.max(1, Math.floor(segLen / (0.3 * radius)))
     for (let i = 0; i <= steps; i++) {
       const t = steps === 0 ? 0 : i / steps
@@ -148,28 +257,33 @@
     }
   }
 
-  /** Replay a full recorded stroke — 'm' function */
   function replayStroke(stroke) {
     if (!stroke || !stroke.points || stroke.points.length === 0) return
     const pts = stroke.points
-    const scatter = stroke.scatter !== undefined ? stroke.scatter : 1
+
     if (stroke.type === 'erase') {
       eraseCircle(pts[0].x, pts[0].y, stroke.size)
       for (let i = 1; i < pts.length; i++) {
         eraseSegment(pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y, stroke.size)
       }
+    } else if (stroke.type === 'stencil') {
+      ctx.save()
+      ctx.fillStyle = stroke.color || '#000000'
+      ctx.globalAlpha = stroke.pressure || 1.0
+      ctx.beginPath()
+      ctx.moveTo(pts[0].x, pts[0].y)
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
+      ctx.closePath()
+      ctx.fill()
+      ctx.restore()
     } else {
-      renderSprayDot(pts[0].x, pts[0].y, stroke.size, stroke.density, stroke.color, stroke.pressure, scatter)
+      renderStyledDot(stroke, pts[0])
       for (let i = 1; i < pts.length; i++) {
-        renderSpraySegment(
-          pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y,
-          stroke.size, stroke.density, stroke.color, stroke.pressure, scatter
-        )
+        renderStyledSegment(stroke, pts[i - 1], pts[i], i, pts.length)
       }
     }
   }
 
-  // ─── Message handler ──────────────────────────────────────────────────
   window.addEventListener('message', function (event) {
     let data = event.data
     if (typeof data === 'string') {
@@ -178,20 +292,16 @@
     if (!data || !data.action) return
 
     switch (data.action) {
-
-      // ── init ─────────────────────────────────────────────────────────
       case 'init': {
         canvasW = data.width || 1024
         canvasH = data.height || 1024
         canvas.width = canvasW
         canvas.height = canvasH
         ctx.clearRect(0, 0, canvasW, canvasH)
-        // Create offscreen scratch canvas (matches original, though unused)
         offscreen = document.createElement('canvas')
         offscreen.width = canvasW
         offscreen.height = canvasH
         offscreen.getContext('2d')
-        // Reset state
         strokes = []
         redoStack = []
         snapshots = []
@@ -201,56 +311,45 @@
         break
       }
 
-      // ── startStroke ──────────────────────────────────────────────────
       case 'startStroke': {
         isDrawing = true
         redoStack = []
         activeStroke = {
           type: data.type || 'paint',
+          style: data.style || undefined,
           color: data.color || '#000000',
           size: data.size || 10,
           density: data.density || 25,
           pressure: data.pressure || 0.8,
           scatter: data.scatter !== undefined ? data.scatter : 1,
-          points: [{ x: data.x, y: data.y }],
+          points: [{ x: data.x, y: data.y, t: data.t }],
         }
         if (activeStroke.type === 'erase') {
           eraseCircle(data.x, data.y, activeStroke.size)
         } else {
-          renderSprayDot(
-            data.x, data.y,
-            activeStroke.size, activeStroke.density,
-            activeStroke.color, activeStroke.pressure,
-            activeStroke.scatter
-          )
+          renderStyledDot(activeStroke, activeStroke.points[0])
         }
         break
       }
 
-      // ── addPoint ─────────────────────────────────────────────────────
       case 'addPoint': {
         if (!isDrawing || !activeStroke) break
         const prev = activeStroke.points[activeStroke.points.length - 1]
-        const point = { x: data.x, y: data.y }
+        const point = { x: data.x, y: data.y, t: data.t }
         if (data.pressure !== undefined) activeStroke.pressure = data.pressure
         if (data.size !== undefined) activeStroke.size = data.size
         if (data.density !== undefined) activeStroke.density = data.density
         if (data.scatter !== undefined) activeStroke.scatter = data.scatter
+        if (data.style !== undefined) activeStroke.style = data.style
         activeStroke.points.push(point)
         if (activeStroke.type === 'erase') {
           eraseSegment(prev.x, prev.y, point.x, point.y, activeStroke.size)
         } else {
-          renderSpraySegment(
-            prev.x, prev.y, point.x, point.y,
-            activeStroke.size, activeStroke.density,
-            activeStroke.color, activeStroke.pressure,
-            activeStroke.scatter
-          )
+          renderStyledSegment(activeStroke, prev, point, activeStroke.points.length - 1, activeStroke.points.length)
         }
         break
       }
 
-      // ── endStroke ────────────────────────────────────────────────────
       case 'endStroke': {
         if (isDrawing && activeStroke) {
           isDrawing = false
@@ -261,12 +360,10 @@
         break
       }
 
-      // ── undo ─────────────────────────────────────────────────────────
       case 'undo': {
         if (strokes.length === 0) break
         const undone = strokes.pop()
         redoStack.push(undone)
-        // Restore previous snapshot (original pops the snapshot too)
         if (snapshots.length > 1) {
           snapshots.pop()
           const idx = snapshots.length - 1
@@ -277,7 +374,6 @@
         break
       }
 
-      // ── redo ─────────────────────────────────────────────────────────
       case 'redo': {
         if (redoStack.length === 0) break
         const redone = redoStack.pop()
@@ -287,7 +383,6 @@
         break
       }
 
-      // ── loadStrokes ──────────────────────────────────────────────────
       case 'loadStrokes': {
         ctx.clearRect(0, 0, canvasW, canvasH)
         snapshots = []
@@ -303,7 +398,14 @@
         break
       }
 
-      // ── clear ────────────────────────────────────────────────────────
+      case 'drawStroke': {
+        if (!data.stroke || !data.stroke.points || data.stroke.points.length === 0) break
+        strokes.push(data.stroke)
+        replayStroke(data.stroke)
+        takeSnapshot()
+        break
+      }
+
       case 'clear': {
         ctx.clearRect(0, 0, canvasW, canvasH)
         strokes = []
@@ -315,7 +417,6 @@
         break
       }
 
-      // ── fullRedraw ───────────────────────────────────────────────────
       case 'fullRedraw': {
         ctx.clearRect(0, 0, canvasW, canvasH)
         snapshots = []
@@ -327,7 +428,6 @@
         break
       }
 
-      // ── getScreenshot ────────────────────────────────────────────────
       case 'getScreenshot': {
         try {
           const thumb = document.createElement('canvas')
@@ -350,7 +450,6 @@
         break
       }
 
-      // ── updateBrush ──────────────────────────────────────────────────
       case 'updateBrush': {
         if (activeStroke) {
           if (data.size !== undefined) activeStroke.size = data.size
@@ -358,13 +457,34 @@
           if (data.color !== undefined) activeStroke.color = data.color
           if (data.pressure !== undefined) activeStroke.pressure = data.pressure
           if (data.scatter !== undefined) activeStroke.scatter = data.scatter
+          if (data.style !== undefined) activeStroke.style = data.style
         }
+        break
+      }
+
+      case 'stampStencil': {
+        const points = data.points || []
+        const color = data.color || '#000000'
+        const size = data.size || 10
+        const x = data.x
+        const y = data.y
+        const stencilStroke = {
+          type: 'stencil',
+          style: 'stencil',
+          color,
+          size,
+          points: points.map(p => ({ x: x + p.x * (size / 10), y: y + p.y * (size / 10) })),
+          pressure: 1.0,
+        }
+
+        strokes.push(stencilStroke)
+        replayStroke(stencilStroke)
+        takeSnapshot()
         break
       }
     }
   })
 
-  // Initialise canvas on load
   canvas.width = canvasW
   canvas.height = canvasH
   ctx.clearRect(0, 0, canvasW, canvasH)

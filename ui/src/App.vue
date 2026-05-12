@@ -81,6 +81,10 @@ function onMessage(event: MessageEvent) {
       hudData.canRedo             = false
       hudData.importExportEnabled = a.importExportEnabled || false
       hudData.lastExportCode      = ''
+      hudData.paintStyles         = a.paintStyles         || []
+      hudData.currentStyleIndex   = a.currentStyleIndex   || 1
+      hudData.stencils            = a.stencils            || []
+      hudData.currentStencilIndex = a.currentStencilIndex || 1
       break
 
     case 'closeHUD':
@@ -90,6 +94,14 @@ function onMessage(event: MessageEvent) {
 
     case 'brushChanged':
       hudData.currentBrushIndex = a.brushIndex || 0
+      break
+
+    case 'styleChanged':
+      hudData.currentStyleIndex = a.styleIndex || 1
+      break
+
+    case 'stencilChanged':
+      hudData.currentStencilIndex = a.stencilIndex || 1
       break
 
     case 'strokeUpdate':
@@ -148,10 +160,13 @@ function onKeyEvent(e: KeyboardEvent) {
     }
   }
 
-  if (isEscape || isAlt) {
+  if (isEscape || (isAlt && e.type === 'keyup')) {
     e.preventDefault()
     e.stopPropagation()
     fetchNui('releaseMouse')
+  } else if (isAlt) {
+    e.preventDefault()
+    e.stopPropagation()
   }
 }
 

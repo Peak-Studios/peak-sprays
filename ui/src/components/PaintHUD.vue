@@ -52,6 +52,16 @@ function selectColor(color: string) {
   hudData.currentColor = color
   fetchNui('changeColor', { color })
 }
+
+function selectStyle(index: number) {
+  hudData.currentStyleIndex = index
+  fetchNui('changeStyle', { index })
+}
+
+function selectStencil(index: number) {
+  hudData.currentStencilIndex = index
+  fetchNui('changeStencil', { index })
+}
 </script>
 
 <template>
@@ -153,8 +163,61 @@ function selectColor(color: string) {
         </div>
       </div>
 
+      <!-- Style Selection -->
+      <div v-if="!hudData.isEraseMode && hudData.paintStyles.length > 0" class="animate-slide-up delay-75">
+        <div class="glass-panel hud-card pointer-events-auto w-[282px] p-4 space-y-3">
+          <div class="flex justify-between items-center">
+            <span class="hud-label">Paint Style</span>
+            <span class="hud-value">
+              {{ hudData.paintStyles[hudData.currentStyleIndex - 1]?.name || 'Standard' }}
+            </span>
+          </div>
+          <div class="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+            <button
+              v-for="(style, idx) in hudData.paintStyles"
+              :key="idx"
+              @click="selectStyle(idx + 1)"
+              class="w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-300 border border-white/10"
+              :class="hudData.currentStyleIndex === (idx + 1) ? 'bg-white/20 border-white/30 text-white' : 'bg-black/20 text-white/40 hover:bg-white/10'"
+            >
+              <i v-if="style.icon === 'spray'" class="fas fa-spray-can text-[10px]"></i>
+              <i v-else-if="style.icon === 'pen'" class="fas fa-marker text-[10px]"></i>
+              <i v-else-if="style.icon === 'marker'" class="fas fa-pen-nib text-[10px]"></i>
+              <i v-else-if="style.icon === 'tint'" class="fas fa-fill-drip text-[10px]"></i>
+              <i v-else-if="style.icon === 'cloud'" class="fas fa-wind text-[10px]"></i>
+              <i v-else-if="style.icon === 'drip'" class="fas fa-tint text-[10px]"></i>
+              <i v-else-if="style.icon === 'stencil'" class="fas fa-border-all text-[10px]"></i>
+              <span v-else class="text-[10px] font-bold">{{ style.name.charAt(0) }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stencil Selection -->
+      <div v-if="!hudData.isEraseMode && hudData.paintStyles[hudData.currentStyleIndex - 1]?.id === 'stencil'" class="animate-slide-up delay-100">
+        <div class="glass-panel hud-card pointer-events-auto w-[282px] p-4 space-y-3">
+          <div class="flex justify-between items-center">
+            <span class="hud-label">Stencil Pattern</span>
+            <span class="hud-value">
+              {{ hudData.stencils[hudData.currentStencilIndex - 1]?.name || 'None' }}
+            </span>
+          </div>
+          <div class="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+            <button
+              v-for="(stencil, idx) in hudData.stencils"
+              :key="idx"
+              @click="selectStencil(idx + 1)"
+              class="w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-300 border border-white/10"
+              :class="hudData.currentStencilIndex === (idx + 1) ? 'bg-white/20 border-white/30 text-white' : 'bg-black/20 text-white/40 hover:bg-white/10'"
+            >
+              <span class="text-[10px] font-bold">{{ stencil.name.substring(0, 2).toUpperCase() }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Settings Panel (Density) -->
-      <div v-if="!hudData.isEraseMode" class="animate-slide-up delay-100">
+      <div v-if="!hudData.isEraseMode" class="animate-slide-up delay-150">
         <div class="glass-panel hud-card pointer-events-auto w-[282px] p-4 space-y-3">
           <div class="flex justify-between items-center">
             <span class="hud-label">Paint Scatter</span>

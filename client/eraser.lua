@@ -259,7 +259,7 @@ function EraserRenderLoop()
             if hit then
                 local brush = Config.BrushSizes[SprayState.brushIndex]
                 local width = #(corners.bottomRight - corners.bottomLeft)
-                local canvasScale = (brush.size * 1.5) / Config.CanvasWidth * width * 0.5
+                local canvasScale = (brush.size * 1.5) / (SprayState.canvasWidth or Config.CanvasWidth) * width * 0.5
 
                 local right = norm(corners.bottomRight - corners.bottomLeft)
                 local up = norm(corners.topLeft - corners.bottomLeft)
@@ -294,11 +294,22 @@ function EraserInputLoop()
         local time = GetGameTimer()
 
         -- Disable controls
-        for _, c in ipairs({0, 24, 25, 140, 141, 142, 257, 47, 58}) do DisableControlAction(0, c, true) end
+        for _, c in ipairs({0, 19, 24, 25, 140, 141, 142, 257, 47, 58}) do DisableControlAction(0, c, true) end
+        if SprayState._nuiMouseActive and DisableSprayCameraLook then
+            DisableSprayCameraLook()
+        end
         DisablePlayerFiring(PlayerPedId(), true)
         SetFollowPedCamViewMode(4)
 
-        if IsDisabledControlPressed(0, Config.Keys.EraseStroke) then
+        if IsDisabledControlJustPressed(0, Config.Keys.ToggleMouse) and SetSprayMouseFocus then
+            SetSprayMouseFocus(true)
+        elseif SprayState._altMouseHeld and not IsDisabledControlPressed(0, Config.Keys.ToggleMouse) and SetSprayMouseFocus then
+            SetSprayMouseFocus(false)
+        end
+
+        if SprayState._nuiMouseActive then
+            if SprayState.isDrawing then EndCurrentStroke() end
+        elseif IsDisabledControlPressed(0, Config.Keys.EraseStroke) then
             HandleCanvasEraseInput(time)
         else
             if SprayState.isDrawing then EndCurrentStroke() end
@@ -306,13 +317,6 @@ function EraserInputLoop()
 
         if IsDisabledControlJustPressed(0, Config.Keys.ScrollUp) then CycleBrushSize(1)
         elseif IsDisabledControlJustPressed(0, Config.Keys.ScrollDown) then CycleBrushSize(-1) end
-
-        if IsDisabledControlJustPressed(0, Config.Keys.ToggleMouse) then
-            if GetGameTimer() - (SprayState.lastMouseToggleTime or 0) > 300 then
-                if ToggleNuiMouse then ToggleNuiMouse() end
-                SprayState.lastMouseToggleTime = GetGameTimer()
-            end
-        end
 
         if IsControlJustPressed(0, 73) then -- X: Delete All
             if SprayState.duiObject then

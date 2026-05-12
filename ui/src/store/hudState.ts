@@ -38,6 +38,10 @@ export const hudData = reactive({
   canRedo:             false,
   importExportEnabled: false,
   lastExportCode:      '',
+  paintStyles:         [] as any[],
+  currentStyleIndex:   1,
+  stencils:            [] as any[],
+  currentStencilIndex: 1,
 })
 
 export const showHUD = reactive({ value: false })

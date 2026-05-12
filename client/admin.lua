@@ -86,7 +86,7 @@ function ShowPaintingActions(p)
                 title = "👁️ Preview",
                 description = "Render this painting in-game (DUI preview)",
                 icon = "eye",
-                onSelect = function() PreviewPainting(p.id) end
+                onSelect = function() PreviewPainting(p) end
             },
             {
                 title = "📍 Teleport",
@@ -128,10 +128,11 @@ function ShowPaintingActions(p)
     lib.showContext("spray_admin_actions")
 end
 
-function PreviewPainting(id)
+function PreviewPainting(painting)
     CleanupPreview()
     lib.notify({ title = "Loading preview...", type = "inform", duration = 2000 })
     
+    local id = type(painting) == "table" and painting.id or painting
     local data = Peak.Client.TriggerCallback("peak-sprays:adminGetStrokeData", id)
     if not data or (type(data) == "table" and #data == 0) then
         lib.notify({ title = "Preview", description = "No stroke data found", type = "error" })
@@ -141,9 +142,9 @@ function PreviewPainting(id)
     local strokes = data.strokes or data
     previewCount = previewCount + 1
     
-    local w = Config.CanvasWidth or 1024
-    local h = Config.CanvasHeight or 1024
-    local url = ("nui://%s/ui/dist/canvas.html"):format(GetCurrentResourceName())
+    local w = (type(painting) == "table" and painting.canvasWidth) or Config.CanvasWidth or 1024
+    local h = (type(painting) == "table" and painting.canvasHeight) or Config.CanvasHeight or 1024
+    local url = ("nui://%s/ui/dist/canvas.html?width=%d&height=%d"):format(GetCurrentResourceName(), w, h)
     
     activePreviewDui = CreateDui(url, w, h)
     previewTxd = "peak_spray_admprev_" .. previewCount .. "_dict"

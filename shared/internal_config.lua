@@ -65,6 +65,34 @@ Config.BrushSizes = {
     { name = 'THICK',  size = 20, sprayDensity = 40 },
 }
 Config.DefaultBrushSizeIndex = 1
+
+-- Paint Styles
+Config.PaintStyles = {
+    { id = 'spray',       name = 'Aerosol Spray',   icon = 'spray' },
+    { id = 'pen',         name = 'Fine Marker',     icon = 'pen' },
+    { id = 'calligraphy', name = 'Calligraphy',     icon = 'marker' },
+    { id = 'splatter',    name = 'Splatter',        icon = 'tint' },
+    { id = 'airbrush',    name = 'Soft Airbrush',   icon = 'cloud' },
+    { id = 'drip',        name = 'Drip Style',      icon = 'tint' },
+    { id = 'stencil',     name = 'Stencil Stamp',   icon = 'stencil' },
+}
+Config.DefaultPaintStyleIndex = 1
+
+-- Drip Style Settings
+Config.DripThresholdMs = 350 -- Time holding still before dripping
+Config.DripSpeed = 5.0      -- How fast the drip falls
+Config.DripWidthMult = 0.5  -- Width of the drip relative to brush size
+Config.DripMaxLen = 180     -- Max length of a single drip
+Config.DripTolerance = 15.0 -- Movement tolerance for dwelling (pixels)
+
+-- Stencils
+Config.Stencils = {
+    { name = 'Peak',   points = { {x=0,y=-10},{x=10,y=10},{x=-10,y=10},{x=0,y=-10} } },
+    { name = 'Star',   points = { {x=0,y=-15},{x=4,y=-5},{x=15,y=-5},{x=7,y=2},{x=10,y=12},{x=0,y=5},{x=-10,y=12},{x=-7,y=2},{x=-15,y=-5},{x=-4,y=-5},{x=0,y=-15} } },
+    { name = 'Crown',  points = { {x=-10,y=5},{x=-10,y=-5},{x=-5,y=0},{x=0,y=-10},{x=5,y=0},{x=10,y=-5},{x=10,y=5},{x=-10,y=5} } },
+    { name = 'Skull',  points = { {x=-5,y=-8},{x=5,y=-8},{x=8,y=-3},{x=8,y=3},{x=4,y=10},{x=2,y=10},{x=2,y=6},{x=-2,y=6},{x=-2,y=10},{x=-4,y=10},{x=-8,y=3},{x=-8,y=-3},{x=-5,y=-8} } },
+    { name = 'Heart',  points = { {x=0,y=10},{x=-10,y=0},{x=-10,y=-5},{x=-5,y=-10},{x=0,y=-5},{x=5,y=-10},{x=10,y=-5},{x=10,y=0},{x=0,y=10} } },
+}
 Config.DefaultDensity = 0.7
 Config.PressureEnabled = true
 Config.DefaultPressure = 0.8
