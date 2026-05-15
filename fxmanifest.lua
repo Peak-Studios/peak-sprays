@@ -2,7 +2,7 @@ fx_version 'cerulean'
 game 'gta5'
 author 'Peak Studios'
 description 'Peak Sprays'
-version '0.2.0'
+version '0.2.1'
 lua54 'yes'
 
 shared_scripts {
@@ -18,6 +18,9 @@ server_scripts {
     'server/init.lua',
     'server/bridge.lua',
     'server/custom.lua',
+    'server/phone_bridge.lua',
+    'server/gang_manager.lua',
+    'server/territory.lua',
     'server/manager.lua',
     'server/scenes.lua',
     'server/admin.lua',
@@ -29,6 +32,8 @@ client_scripts {
     'client/init.lua',
     'client/bridge.lua',
     'client/custom.lua',
+    'client/gang_bridge.lua',
+    'client/territory.lua',
     'client/manager.lua',
     'client/painter.lua',
     'client/raycast.lua',

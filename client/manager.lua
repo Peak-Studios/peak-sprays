@@ -36,6 +36,7 @@ SprayState = {
     pendingCancel = false,
     targetPaintingNormal = nil,
     existingStrokes = nil,
+    activeItem = nil,
     pendingImage = nil
 }
 
@@ -64,6 +65,8 @@ CreateThread(function()
                 canvasWidth = p.canvas_width,
                 canvasHeight = p.canvas_height,
                 strokeCount = p.stroke_count,
+                gangId = p.gang_id,
+                status = p.status or "normal",
                 duiObj = nil,
                 txdName = nil,
                 txnName = nil,
@@ -84,6 +87,7 @@ if Config.UseItem then
         if SprayState.mode ~= "idle" then return end
 
         local color = Config.ColoredItems[itemName]
+        SprayState.activeItem = itemName
         StartSelectionMode(color)
     end)
 
@@ -174,14 +178,21 @@ function SelectionLoop()
 
                 if SprayUtils.IsInBlacklistedZone(hitCoords) then
                     Peak.Client.Notify(L("blacklisted_zone"), "error", Config.NotifyDuration)
-                elseif selectionStep == 1 then
+                else
+                    local inEnemyTerritory = IsInEnemyTerritory and IsInEnemyTerritory(hitCoords)
+                    if inEnemyTerritory then
+                        Peak.Client.Notify("Enemy territory nearby. Saving this spray will start a contest.", "warning", Config.NotifyDuration)
+                    end
+                end
+
+                if not SprayUtils.IsInBlacklistedZone(hitCoords) and selectionStep == 1 then
                     SprayState.corner1 = hitCoords
                     SprayState.surfaceNormal = normal
                     activeNormal = normal
                     selectionStep = 2
                     Peak.Client.Notify(L("select_second_corner"), "info", Config.NotifyDuration)
                     SprayUtils.DebugPrint("Corner 1 placed at", hitCoords)
-                elseif selectionStep == 2 then
+                elseif not SprayUtils.IsInBlacklistedZone(hitCoords) and selectionStep == 2 then
                     SprayState.corner2 = hitCoords
                     local rect, right, up = RaycastModule.ComputeRectangle(SprayState.corner1, SprayState.corner2, activeNormal)
 
@@ -322,6 +333,7 @@ function FullCleanup(hardClear)
     SprayState.pendingCancel = false
     SprayState.targetPaintingNormal = nil
     SprayState.existingStrokes = nil
+    SprayState.activeItem = nil
     SprayState.pendingImage = nil
     SprayState._eraseMode = false
     SprayState._duiOffset = nil
@@ -349,6 +361,8 @@ RegisterNetEvent("peak-sprays:cl:newPainting", function(data)
         canvasWidth = data.canvas_width,
         canvasHeight = data.canvas_height,
         strokeCount = data.stroke_count,
+        gangId = data.gang_id,
+        status = data.status or "normal",
         duiObj = nil,
         txdName = nil,
         txnName = nil,

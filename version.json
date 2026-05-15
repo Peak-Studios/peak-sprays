@@ -1,6 +1,6 @@
 {
   "peak-sprays": {
     "version": "0.2.1",
-    "changelog": "- Fixed Reliable network event size overflow via delta-sync implementation.\n- Major premium UI redesign with glassmorphism and animations.\n- Improved raycasting precision for better spray placement.\n- Enhanced stability and performance of the rendering system.\n- Optimized SQL queries and resource efficiency."
+    "changelog": "- WIP gang laptop and spray turf upgrade with a smaller transparent NUI shell.\n- Added Leaflet territory map support using the packaged GTA map image.\n- Added gang dashboard, turf summary, discovered sprays, and contested turf metadata.\n- Synced gang spray XP/tier updates across create, erase, and contest flows.\n- Unfinished: requires full FXServer and in-game testing before production use."
   }
 }

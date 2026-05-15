@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import PaintHUD from '@/components/PaintHUD.vue'
 import SceneEditor from '@/components/SceneEditor.vue'
+import LaptopDesktop from '@/components/laptop/LaptopDesktop.vue'
 import { hudData, showHUD } from '@/store/hudState'
 import { dispatchSceneAction, sceneState } from '@/store/sceneState'
 import { fetchNui } from '@/utils/fetchNui'
+
+const showLaptop = ref(false)
+const laptopState = reactive<{ gang: any, phone: string }>({ gang: null, phone: 'native' })
 
 // ─── Web Audio (spray sound) ──────────────────────────────────────────
 let audioCtx:    AudioContext | null    = null
@@ -144,6 +148,20 @@ function onMessage(event: MessageEvent) {
     case 'stopSpraySound':
       stopSpraySound()
       break
+
+    case 'openLaptop':
+      laptopState.gang = a.gang || null
+      laptopState.phone = a.phone || 'native'
+      showLaptop.value = true
+      break
+
+    case 'closeLaptop':
+      showLaptop.value = false
+      break
+
+    case 'gangData':
+      laptopState.gang = a.gang || null
+      break
   }
 }
 
@@ -153,10 +171,23 @@ function onKeyEvent(e: KeyboardEvent) {
   const isEnter  = e.key === 'Enter'  || e.code === 'Enter'  || e.keyCode === 13
   const isAlt    = e.key === 'Alt'    || e.code === 'AltLeft' || e.code === 'AltRight' || e.keyCode === 18
 
+  if (showLaptop.value && e.type === 'keydown' && !e.repeat && isEscape) {
+    e.preventDefault()
+    e.stopPropagation()
+    fetchNui('laptop:close')
+    showLaptop.value = false
+    return
+  }
+
   if (sceneState.visible && e.type === 'keydown' && !e.repeat) {
     if (isEscape) {
       e.preventDefault()
       e.stopPropagation()
+      if (showLaptop.value) {
+        fetchNui('laptop:close')
+        showLaptop.value = false
+        return
+      }
       fetchNui('sceneEditor:close')
       return
     }
@@ -195,6 +226,13 @@ onUnmounted(() => {
 
 <template>
   <div class="w-full h-full relative">
+    <LaptopDesktop
+      v-if="showLaptop"
+      :gang="laptopState.gang"
+      :phone="laptopState.phone"
+      @close="showLaptop = false"
+      @gang-updated="laptopState.gang = $event"
+    />
     <PaintHUD v-if="showHUD.value" />
     <SceneEditor />
   </div>

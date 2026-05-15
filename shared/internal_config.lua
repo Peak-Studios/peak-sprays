@@ -52,6 +52,15 @@ Config.RenderDistance = 50.0
 Config.UnloadDistance = 80.0
 Config.AutoSaveDistance = 15.0
 Config.EraserMaxDistance = 4.0
+Config.InfluenceRadius = 90.0
+Config.ContestedInfluenceRadius = 50.0
+Config.PlacementDistance = 75.0
+Config.ContestDuration = 15 * 60
+Config.ContestCheckInterval = 10
+Config.DailyLimitType = 'gang'
+Config.DailyLimitCount = 5
+Config.GangLaptopCommand = 'ganglaptop'
+Config.GangSprayItem = 'gang-spray'
 
 -- Performance
 Config.MaxActiveRenderers = 20

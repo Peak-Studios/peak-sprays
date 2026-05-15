@@ -286,6 +286,11 @@ Peak.Server.RegisterCallback("peak-sprays:savePainting", function(source, data)
     OnServerSprayCompleted(source, insertId, data)
     if territory.gangId and Peak.Gangs and Peak.Gangs.AddSprayXp then
         Peak.Gangs.AddSprayXp(territory.gangId)
+        Peak.Gangs.AddActivity(territory.gangId, {
+            type = "spray",
+            title = "Turf claimed",
+            message = ("A spray was placed at %.1f, %.1f."):format(data.worldX or 0.0, data.worldY or 0.0),
+        })
     end
     
     return { success = true, id = insertId }
@@ -293,9 +298,25 @@ end)
 
 Peak.Server.RegisterCallback("peak-sprays:erasePainting", function(source, paintingId)
     if not ServerCanErase(source) then return { success = false, message = "Permission denied" } end
+
+    local info = Peak.Server.ExecuteSQL("SELECT gang_id FROM spray_paintings WHERE id = @id LIMIT 1", {
+        ["@id"] = paintingId
+    })
+    local gangId = info and info[1] and tonumber(info[1].gang_id) or nil
     
     local rows = Peak.Server.UpdateSQL("DELETE FROM spray_paintings WHERE id = @id", { ["@id"] = paintingId })
     if rows and rows > 0 then
+        if Peak.Gangs then
+            Peak.Gangs.RemoveDiscoveredSpray(paintingId)
+            if gangId then
+                Peak.Gangs.AddSprayXp(gangId, { setLastSpray = false })
+                Peak.Gangs.AddActivity(gangId, {
+                    type = "spray",
+                    title = "Spray removed",
+                    message = "A gang spray was scrubbed or erased.",
+                })
+            end
+        end
         TriggerClientEvent("peak-sprays:cl:removePainting", -1, paintingId)
         local playerName = Peak.Server.GetPlayerName(source)
         local identifier = Peak.Server.GetIdentifier(source)
