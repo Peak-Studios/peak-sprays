@@ -13,6 +13,7 @@ Peak Sprays is a premium open-source FiveM resource for persistent in-world spra
 - Persistent spray paintings, text scenes, and signs stored in SQL
 - DUI-based in-world canvas rendering
 - Paint, erase, undo, redo, brush sizing, color presets, and optional color picker
+- Image-link sprays with allowlisted HTTPS hosts, placement, scale, rotate, undo, redo, and erase support
 - Scene/sign editor with fonts, colors, backgrounds, visibility modes, expiry, and live placement preview
 - Live preview while players are actively painting
 - Admin panel for listing, previewing, teleporting to, and deleting sprays, text scenes, and signs
@@ -65,6 +66,12 @@ ensure peak-sprays
 - **[client/custom.lua](client/custom.lua)**: Client-side hooks for permissions, notifications, progress bars, and targets.
 - **[server/custom.lua](server/custom.lua)**: Server-side hooks for money overrides and lifecycle events.
 - **[server/server-config.lua](server/server-config.lua)**: Sensitive server-only values such as Discord webhooks.
+
+### Image Sprays
+
+Image sprays are enabled with `Config.ImageSpraysEnabled` in [shared/internal_config.lua](shared/internal_config.lua). Players can paste an HTTPS image URL while painting, place it on the selected canvas, scale and rotate it, then save it as part of the spray.
+
+Remote images are restricted by `Config.ImageAllowedHosts`. Keep this list tight and only include hosts you trust. Images are stored as URLs in `stroke_data`, so a spray can render blank later if the remote file is deleted, moved, blocked by CORS, or blocked by the player's client.
 
 ## Publishing Notes
 

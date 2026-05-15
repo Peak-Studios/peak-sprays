@@ -17,3 +17,7 @@ We take the security of our tools seriously. If you find a security vulnerabilit
 2. **Discord**: Contact a Lead Developer in the [Peak Studios Discord](https://discord.gg/7kdchFZxw).
 
 We will acknowledge your report within 48 hours and provide a timeline for a fix. Please give us reasonable time to resolve the issue before making any information public.
+
+## Image Spray Safety
+
+Image sprays load remote HTTPS images inside DUI/NUI. Keep `Config.ImageAllowedHosts` limited to trusted hosts, because remote images can be removed, replaced, used for tracking, or blocked by CORS. Do not allow arbitrary hosts on public servers unless you also add your own moderation and caching/proxy layer.

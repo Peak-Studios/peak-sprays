@@ -68,6 +68,92 @@ end)
 -- CALLBACKS
 -- ============================================================
 
+local function ExtractUrlHost(url)
+    if type(url) ~= "string" then return nil end
+    return url:match("^https://([^/%?#:]+)")
+end
+
+local function IsAllowedImageHost(host)
+    if not host then return false end
+    host = host:lower()
+
+    for _, allowed in ipairs(Config.ImageAllowedHosts or {}) do
+        allowed = tostring(allowed):lower()
+        if host == allowed or host:sub(-(allowed:len() + 1)) == "." .. allowed then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function ValidateImageOperation(stroke)
+    if Config.ImageSpraysEnabled ~= true then
+        return false, "Image sprays are disabled"
+    end
+
+    if type(stroke.url) ~= "string" or stroke.url == "" then
+        return false, "Image URL is required"
+    end
+
+    if #stroke.url > (Config.ImageUrlMaxLength or 512) then
+        return false, "Image URL is too long"
+    end
+
+    local host = ExtractUrlHost(stroke.url)
+    if not host then
+        return false, "Image URL must be HTTPS"
+    end
+
+    if not IsAllowedImageHost(host) then
+        return false, "Image host is not allowed"
+    end
+
+    if type(stroke.x) ~= "number" or type(stroke.y) ~= "number"
+    or type(stroke.width) ~= "number" or type(stroke.height) ~= "number" then
+        return false, "Invalid image placement"
+    end
+
+    if stroke.flipX ~= nil and type(stroke.flipX) ~= "boolean" then
+        return false, "Invalid image flip"
+    end
+
+    if stroke.flipY ~= nil and type(stroke.flipY) ~= "boolean" then
+        return false, "Invalid image flip"
+    end
+
+    local defaultSize = Config.ImageDefaultSize or 256
+    local minSize = defaultSize * (Config.ImageMinScale or 0.25)
+    local maxSize = defaultSize * (Config.ImageMaxScale or 4.0)
+
+    if stroke.width < minSize or stroke.height < minSize or stroke.width > maxSize or stroke.height > maxSize then
+        return false, "Image size is outside allowed limits"
+    end
+
+    return true
+end
+
+local function ValidateImageOperations(strokeData)
+    if type(strokeData) ~= "table" then
+        return false, "Invalid stroke data"
+    end
+
+    local imageCount = 0
+    for _, stroke in ipairs(strokeData) do
+        if type(stroke) == "table" and stroke.type == "image" then
+            imageCount = imageCount + 1
+            if imageCount > (Config.ImageMaxPerSpray or 5) then
+                return false, "Too many images in this spray"
+            end
+
+            local ok, message = ValidateImageOperation(stroke)
+            if not ok then return false, message end
+        end
+    end
+
+    return true
+end
+
 Peak.Server.RegisterCallback("peak-sprays:hasSprayItem", function(source)
     if Peak.Server.HasItem(source, Config.SprayPaintItem, 1) then return true end
     for itemName, _ in pairs(Config.ColoredItems) do
@@ -78,6 +164,22 @@ end)
 
 Peak.Server.RegisterCallback("peak-sprays:hasClothItem", function(source)
     return Peak.Server.HasItem(source, Config.ClothItem, 1)
+end)
+
+Peak.Server.RegisterCallback("peak-sprays:validateImageUrl", function(source, url)
+    local defaultSize = Config.ImageDefaultSize or 256
+    local ok, message = ValidateImageOperation({
+        type = "image",
+        url = url,
+        x = defaultSize,
+        y = defaultSize,
+        width = defaultSize,
+        height = defaultSize,
+        rotation = 0,
+        opacity = 1.0
+    })
+
+    return { success = ok, message = message }
 end)
 
 Peak.Server.RegisterCallback("peak-sprays:getPaintings", function(source)
@@ -117,6 +219,11 @@ end)
 Peak.Server.RegisterCallback("peak-sprays:savePainting", function(source, data)
     if not data or not data.corners or not data.normal or not data.strokeData then
         return { success = false, message = "Invalid data" }
+    end
+
+    local validImages, imageMessage = ValidateImageOperations(data.strokeData)
+    if not validImages then
+        return { success = false, message = imageMessage }
     end
     
     if not ServerCanSpray(source) then return { success = false, message = "Permission denied" } end
@@ -204,6 +311,11 @@ Peak.Server.RegisterCallback("peak-sprays:updatePainting", function(source, data
         return { success = false, message = "Invalid data" }
     end
 
+    local validImages, imageMessage = ValidateImageOperations(data.strokeData)
+    if not validImages then
+        return { success = false, message = imageMessage }
+    end
+
     if not ServerCanErase(source) then return { success = false, message = "Permission denied" } end
 
     local rows = Peak.Server.UpdateSQL([[
@@ -257,6 +369,9 @@ end
 
 if Config.ImportExportEnabled then
     Peak.Server.RegisterCallback("peak-sprays:exportCurrentStrokes", function(source, data)
+        local validImages, imageMessage = ValidateImageOperations(data.strokeData)
+        if not validImages then return { success = false, message = imageMessage } end
+
         local code = SprayUtils.GenerateExportCode(data.strokeData, data.canvasWidth, data.canvasHeight)
         return { success = true, code = code }
     end)
@@ -264,6 +379,10 @@ if Config.ImportExportEnabled then
     Peak.Server.RegisterCallback("peak-sprays:importPainting", function(source, code)
         local strokeData, w, h = SprayUtils.DecodeExportCode(code)
         if not strokeData then return { success = false, message = "Invalid code" } end
+
+        local validImages, imageMessage = ValidateImageOperations(strokeData)
+        if not validImages then return { success = false, message = imageMessage } end
+
         return { success = true, strokeData = strokeData, width = w, height = h }
     end)
 end

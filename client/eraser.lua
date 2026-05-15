@@ -302,9 +302,7 @@ function EraserInputLoop()
         SetFollowPedCamViewMode(4)
 
         if IsDisabledControlJustPressed(0, Config.Keys.ToggleMouse) and SetSprayMouseFocus then
-            SetSprayMouseFocus(true)
-        elseif SprayState._altMouseHeld and not IsDisabledControlPressed(0, Config.Keys.ToggleMouse) and SetSprayMouseFocus then
-            SetSprayMouseFocus(false)
+            SetSprayMouseFocus(not SprayState._nuiMouseActive)
         end
 
         if SprayState._nuiMouseActive then

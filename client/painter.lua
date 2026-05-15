@@ -19,6 +19,7 @@ function StartPaintingMode()
     SprayState.dwellTime = 0
     SprayState.lastPos = nil
     SprayState.lastDripTime = 0
+    SprayState.pendingImage = nil
 
     activeDuiId = activeDuiId + 1
     SprayState.duiTxd = "peak_spray_active_" .. activeDuiId .. "_dict"
@@ -113,6 +114,10 @@ function StartPaintingMode()
         density = SprayState.density,
         pressureEnabled = Config.PressureEnabled,
         importExportEnabled = Config.ImportExportEnabled,
+        imageSpraysEnabled = Config.ImageSpraysEnabled == true,
+        imageDefaultSize = Config.ImageDefaultSize or 256,
+        imageMinScale = Config.ImageMinScale or 0.25,
+        imageMaxScale = Config.ImageMaxScale or 4.0,
         paintStyles = Config.PaintStyles,
         currentStyleIndex = SprayState.styleIndex,
         stencils = Config.Stencils,
@@ -240,9 +245,7 @@ function PaintingInputLoop()
         local time = GetGameTimer()
 
         if IsDisabledControlJustPressed(0, Config.Keys.ToggleMouse) then
-            SetSprayMouseFocus(true)
-        elseif SprayState._altMouseHeld and not IsDisabledControlPressed(0, Config.Keys.ToggleMouse) then
-            SetSprayMouseFocus(false)
+            SetSprayMouseFocus(not SprayState._nuiMouseActive)
         end
 
         if SprayState._nuiMouseActive then
@@ -673,6 +676,136 @@ function EndCurrentStroke()
     })
 end
 
+local function CountStrokePoints(stroke)
+    if type(stroke) ~= "table" or type(stroke.points) ~= "table" then return 0 end
+    return #stroke.points
+end
+
+local function UpdateStrokeHud()
+    SendNUIMessage({
+        action = "strokeUpdate",
+        strokeCount = SprayState.strokeCount,
+        maxStrokes = Config.MaxStrokesPerPainting,
+        canUndo = #SprayState.strokeHistory > 0,
+        canRedo = #SprayState.redoStack > 0
+    })
+end
+
+local function ClampImageOperation(image)
+    local canvasW = SprayState.canvasWidth or Config.CanvasWidth
+    local canvasH = SprayState.canvasHeight or Config.CanvasHeight
+    local defaultSize = Config.ImageDefaultSize or 256
+    local minSize = defaultSize * (Config.ImageMinScale or 0.25)
+    local maxSize = defaultSize * (Config.ImageMaxScale or 4.0)
+
+    image.width = SprayUtils.Clamp(tonumber(image.width) or defaultSize, minSize, maxSize)
+    image.height = SprayUtils.Clamp(tonumber(image.height) or image.width, minSize, maxSize)
+    image.x = SprayUtils.Clamp(tonumber(image.x) or canvasW * 0.5, -canvasW, canvasW * 2)
+    image.y = SprayUtils.Clamp(tonumber(image.y) or canvasH * 0.5, -canvasH, canvasH * 2)
+    image.rotation = tonumber(image.rotation) or 0
+    image.opacity = SprayUtils.Clamp(tonumber(image.opacity) or 1.0, 0.05, 1.0)
+    image.flipX = image.flipX == true
+    image.flipY = image.flipY == true
+    return image
+end
+
+function AddImageToSpray(url)
+    if Config.ImageSpraysEnabled ~= true then
+        return { success = false, message = "Image sprays are disabled" }
+    end
+    if SprayState.mode ~= "painting" or not SprayState.duiObject then
+        return { success = false, message = "You must be painting to add an image" }
+    end
+    if SprayState.pendingImage then
+        return { success = false, message = "Finish the current image first" }
+    end
+    if SprayState.strokeCount >= Config.MaxStrokesPerPainting then
+        return { success = false, message = L("max_strokes_reached") or "Max strokes reached" }
+    end
+
+    local imageCount = 0
+    for _, stroke in ipairs(SprayState.strokeHistory) do
+        if type(stroke) == "table" and stroke.type == "image" then imageCount = imageCount + 1 end
+    end
+    if imageCount >= (Config.ImageMaxPerSpray or 5) then
+        return { success = false, message = "Too many images in this spray" }
+    end
+
+    local result = Peak.Client.TriggerCallback("peak-sprays:validateImageUrl", url)
+    if not result or not result.success then
+        return { success = false, message = result and result.message or "Invalid image URL" }
+    end
+
+    if SprayState.isDrawing then EndCurrentStroke() end
+    SetSprayMouseFocus(true)
+
+    local defaultSize = Config.ImageDefaultSize or 256
+    local image = ClampImageOperation({
+        type = "image",
+        url = url,
+        x = (SprayState.canvasWidth or Config.CanvasWidth) * 0.5,
+        y = (SprayState.canvasHeight or Config.CanvasHeight) * 0.5,
+        width = defaultSize,
+        height = defaultSize,
+        rotation = 0,
+        opacity = 1.0,
+        flipX = false,
+        flipY = false
+    })
+
+    SprayState.pendingImage = image
+    SendDuiMessage(SprayState.duiObject, json.encode({ action = "addImage", image = image }))
+    SendNUIMessage({ action = "imageTransformUpdate", image = image })
+    return { success = true, image = image }
+end
+
+function UpdatePendingImage(data)
+    if SprayState.mode ~= "painting" or not SprayState.pendingImage then
+        return { success = false, message = "No image is being edited" }
+    end
+
+    local image = SprayState.pendingImage
+    if data.x ~= nil then image.x = tonumber(data.x) or image.x end
+    if data.y ~= nil then image.y = tonumber(data.y) or image.y end
+    if data.width ~= nil then image.width = tonumber(data.width) or image.width end
+    if data.height ~= nil then image.height = tonumber(data.height) or image.height end
+    if data.rotation ~= nil then image.rotation = tonumber(data.rotation) or image.rotation end
+    if data.opacity ~= nil then image.opacity = tonumber(data.opacity) or image.opacity end
+    if data.flipX ~= nil then image.flipX = data.flipX == true end
+    if data.flipY ~= nil then image.flipY = data.flipY == true end
+
+    ClampImageOperation(image)
+    SendDuiMessage(SprayState.duiObject, json.encode({ action = "updateImage", image = image }))
+    SendNUIMessage({ action = "imageTransformUpdate", image = image })
+    return { success = true, image = image }
+end
+
+function CommitPendingImage()
+    if SprayState.mode ~= "painting" or not SprayState.pendingImage then
+        return { success = false, message = "No image is being edited" }
+    end
+
+    local image = ClampImageOperation(Peak.Utils.DeepCopy(SprayState.pendingImage))
+    table.insert(SprayState.strokeHistory, image)
+    SprayState.redoStack = {}
+    SprayState.strokeCount = SprayState.strokeCount + 1
+    SprayState.pendingImage = nil
+
+    SendDuiMessage(SprayState.duiObject, json.encode({ action = "commitImage", image = image }))
+    SendNUIMessage({ action = "imageTransformUpdate", image = nil })
+    UpdateStrokeHud()
+    return { success = true }
+end
+
+function CancelPendingImage()
+    if SprayState.pendingImage and SprayState.duiObject then
+        SendDuiMessage(SprayState.duiObject, json.encode({ action = "cancelImage" }))
+    end
+    SprayState.pendingImage = nil
+    SendNUIMessage({ action = "imageTransformUpdate", image = nil })
+    return { success = true }
+end
+
 -- ============================================================
 -- ACTIONS
 -- ============================================================
@@ -681,6 +814,12 @@ function ValidatePainting()
     if SprayState.mode ~= "painting" then return end
 
     if SprayState.isDrawing then EndCurrentStroke() end
+    if SprayState.pendingImage then
+        local committed = CommitPendingImage()
+        if not committed or not committed.success then
+            CancelPendingImage()
+        end
+    end
     if #SprayState.strokeHistory == 0 then
         CancelPainting()
         return
@@ -713,6 +852,7 @@ end
 function CancelPainting()
     if SprayState.mode ~= "painting" then return end
     if SprayState.isDrawing then EndCurrentStroke() end
+    CancelPendingImage()
     Peak.Client.Notify(L("painting_cancelled"), "info", Config.NotifyDuration)
     FullCleanup()
 end
@@ -768,7 +908,7 @@ function PerformUndo()
     SprayState.strokeCount = SprayState.strokeCount - 1
     SprayState.totalPoints = 0
     for _, s in ipairs(SprayState.strokeHistory) do
-        SprayState.totalPoints = SprayState.totalPoints + #s.points
+        SprayState.totalPoints = SprayState.totalPoints + CountStrokePoints(s)
     end
 
     if SprayState.duiObject then
@@ -789,7 +929,7 @@ function PerformRedo()
     table.insert(SprayState.strokeHistory, stroke)
 
     SprayState.strokeCount = SprayState.strokeCount + 1
-    SprayState.totalPoints = SprayState.totalPoints + #stroke.points
+    SprayState.totalPoints = SprayState.totalPoints + CountStrokePoints(stroke)
 
     if SprayState.duiObject then
         SendDuiMessage(SprayState.duiObject, json.encode({ action = "redo" }))
@@ -854,7 +994,6 @@ end
 -- ============================================================
 
 SprayState._nuiMouseActive = false
-SprayState._altMouseHeld = false
 
 function DisableSprayCameraLook()
     for _, control in ipairs({1, 2, 3, 4, 5, 6, 106}) do
@@ -864,12 +1003,11 @@ end
 
 function SetSprayMouseFocus(active)
     active = active == true
-    if SprayState._nuiMouseActive == active and SprayState._altMouseHeld == active then return end
+    if SprayState._nuiMouseActive == active then return end
 
     SetNuiFocus(active, active)
     SetNuiFocusKeepInput(active)
     SprayState._nuiMouseActive = active
-    SprayState._altMouseHeld = active
 
     if active and SprayState.isDrawing then
         EndCurrentStroke()
@@ -988,6 +1126,26 @@ RegisterNUICallback('changeStencil', function(data, cb)
         SprayUtils.DebugPrint("[Paint] Stencil changed to: " .. data.index)
     end
     cb('ok')
+end)
+
+RegisterNUICallback('addImageToSpray', function(data, cb)
+    local result = AddImageToSpray(data and data.url)
+    if not result or not result.success then
+        Peak.Client.Notify(result and result.message or "Unable to add image", "error", Config.NotifyDuration)
+    end
+    cb(result)
+end)
+
+RegisterNUICallback('updateSprayImage', function(data, cb)
+    cb(UpdatePendingImage(data or {}))
+end)
+
+RegisterNUICallback('commitSprayImage', function(_, cb)
+    cb(CommitPendingImage())
+end)
+
+RegisterNUICallback('cancelSprayImage', function(_, cb)
+    cb(CancelPendingImage())
 end)
 
 -- ============================================================

@@ -16,6 +16,9 @@
   let isDrawing = false
   let offscreen = null
   let snapshots = []
+  let draftImage = null
+  let redrawToken = 0
+  const imageCache = new Map()
 
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value))
@@ -31,9 +34,145 @@
   }
 
   function takeSnapshot() {
-    const img = ctx.getImageData(0, 0, canvasW, canvasH)
-    snapshots.push(img)
-    if (snapshots.length > 100) snapshots.shift()
+    try {
+      const img = ctx.getImageData(0, 0, canvasW, canvasH)
+      snapshots.push(img)
+      if (snapshots.length > 100) snapshots.shift()
+    } catch (_) {
+      snapshots = []
+    }
+  }
+
+  function nuiResourceName() {
+    return window.GetParentResourceName ? window.GetParentResourceName() : 'peak-sprays'
+  }
+
+  function reportImageFailure(message) {
+    fetch(`https://${nuiResourceName()}/imageLoadFailed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+    }).catch(() => { })
+  }
+
+  function loadImage(url) {
+    if (imageCache.has(url)) return imageCache.get(url)
+
+    const promise = new Promise((resolve, reject) => {
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => resolve(img)
+      img.onerror = () => reject(new Error('Image failed to load. The host may block CORS or the URL may be invalid.'))
+      img.src = url
+    })
+
+    imageCache.set(url, promise)
+    return promise
+  }
+
+  function normalizeImageOperation(image) {
+    if (!image || image.type !== 'image') return null
+    return {
+      type: 'image',
+      url: String(image.url || ''),
+      x: Number(image.x) || canvasW * 0.5,
+      y: Number(image.y) || canvasH * 0.5,
+      width: Math.max(1, Number(image.width) || 256),
+      height: Math.max(1, Number(image.height) || Number(image.width) || 256),
+      rotation: Number(image.rotation) || 0,
+      opacity: image.opacity !== undefined ? clamp(Number(image.opacity) || 1, 0.05, 1) : 1,
+      flipX: image.flipX === true,
+      flipY: image.flipY === true,
+    }
+  }
+
+  function drawImageOperation(image, img) {
+    const op = normalizeImageOperation(image)
+    if (!op || !img) return
+
+    ctx.save()
+    ctx.globalAlpha = op.opacity
+    ctx.translate(op.x, op.y)
+    ctx.rotate(op.rotation * Math.PI / 180)
+    ctx.scale(op.flipX ? -1 : 1, op.flipY ? -1 : 1)
+    ctx.drawImage(img, -op.width * 0.5, -op.height * 0.5, op.width, op.height)
+    ctx.restore()
+  }
+
+  function replayImageOperation(image, options = {}) {
+    const op = normalizeImageOperation(image)
+    if (!op || !op.url) return
+
+    loadImage(op.url)
+      .then((img) => {
+        if (options.redrawWhenReady) {
+          redrawCommitted()
+        } else {
+          drawImageOperation(op, img)
+          if (options.snapshot) takeSnapshot()
+        }
+      })
+      .catch((err) => {
+        if (options.reportError) reportImageFailure(err.message)
+      })
+  }
+
+  function replayPaintOperation(stroke) {
+    if (!stroke || !stroke.points || stroke.points.length === 0) return
+    const pts = stroke.points
+
+    if (stroke.type === 'erase') {
+      eraseCircle(pts[0].x, pts[0].y, stroke.size)
+      for (let i = 1; i < pts.length; i++) {
+        eraseSegment(pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y, stroke.size)
+      }
+    } else if (stroke.type === 'stencil') {
+      ctx.save()
+      ctx.fillStyle = stroke.color || '#000000'
+      ctx.globalAlpha = stroke.pressure || 1.0
+      ctx.beginPath()
+      ctx.moveTo(pts[0].x, pts[0].y)
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
+      ctx.closePath()
+      ctx.fill()
+      ctx.restore()
+    } else {
+      renderStyledDot(stroke, pts[0])
+      for (let i = 1; i < pts.length; i++) {
+        renderStyledSegment(stroke, pts[i - 1], pts[i], i, pts.length)
+      }
+    }
+  }
+
+  function redrawCommitted() {
+    const token = ++redrawToken
+
+    ;(async () => {
+      ctx.clearRect(0, 0, canvasW, canvasH)
+      snapshots = []
+      takeSnapshot()
+
+      for (let i = 0; i < strokes.length; i++) {
+        if (token !== redrawToken) return
+        if (strokes[i]?.type === 'image') {
+          try {
+            drawImageOperation(strokes[i], await loadImage(strokes[i].url))
+          } catch (_) { /* ignore persisted image load failures */ }
+        } else {
+          replayPaintOperation(strokes[i])
+        }
+      }
+
+      if (draftImage && token === redrawToken) {
+        try {
+          drawImageOperation(draftImage, await loadImage(draftImage.url))
+        } catch (err) {
+          reportImageFailure(err.message)
+        }
+      }
+
+      if (token === redrawToken) takeSnapshot()
+    })()
   }
 
   function drawDot(x, y, size, color, pressure) {
@@ -258,29 +397,11 @@
   }
 
   function replayStroke(stroke) {
-    if (!stroke || !stroke.points || stroke.points.length === 0) return
-    const pts = stroke.points
-
-    if (stroke.type === 'erase') {
-      eraseCircle(pts[0].x, pts[0].y, stroke.size)
-      for (let i = 1; i < pts.length; i++) {
-        eraseSegment(pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y, stroke.size)
-      }
-    } else if (stroke.type === 'stencil') {
-      ctx.save()
-      ctx.fillStyle = stroke.color || '#000000'
-      ctx.globalAlpha = stroke.pressure || 1.0
-      ctx.beginPath()
-      ctx.moveTo(pts[0].x, pts[0].y)
-      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
-      ctx.closePath()
-      ctx.fill()
-      ctx.restore()
+    if (!stroke) return
+    if (stroke.type === 'image') {
+      replayImageOperation(stroke, { redrawWhenReady: true, reportError: false })
     } else {
-      renderStyledDot(stroke, pts[0])
-      for (let i = 1; i < pts.length; i++) {
-        renderStyledSegment(stroke, pts[i - 1], pts[i], i, pts.length)
-      }
+      replayPaintOperation(stroke)
     }
   }
 
@@ -307,6 +428,7 @@
         snapshots = []
         activeStroke = null
         isDrawing = false
+        draftImage = null
         takeSnapshot()
         break
       }
@@ -364,7 +486,9 @@
         if (strokes.length === 0) break
         const undone = strokes.pop()
         redoStack.push(undone)
-        if (snapshots.length > 1) {
+        if (undone?.type === 'image') {
+          redrawCommitted()
+        } else if (snapshots.length > 1) {
           snapshots.pop()
           const idx = snapshots.length - 1
           if (idx >= 0) ctx.putImageData(snapshots[idx], 0, 0)
@@ -379,7 +503,7 @@
         const redone = redoStack.pop()
         strokes.push(redone)
         replayStroke(redone)
-        takeSnapshot()
+        if (redone?.type !== 'image') takeSnapshot()
         break
       }
 
@@ -394,10 +518,9 @@
         }
         const incoming = data.strokes || []
         for (let i = 0; i < incoming.length; i++) {
-          replayStroke(incoming[i])
           strokes.push(incoming[i])
-          takeSnapshot()
         }
+        redrawCommitted()
         break
       }
 
@@ -416,10 +539,11 @@
       }
 
       case 'drawStroke': {
-        if (!data.stroke || !data.stroke.points || data.stroke.points.length === 0) break
+        if (!data.stroke) break
+        if (data.stroke.type !== 'image' && (!data.stroke.points || data.stroke.points.length === 0)) break
         strokes.push(data.stroke)
         replayStroke(data.stroke)
-        takeSnapshot()
+        if (data.stroke.type !== 'image') takeSnapshot()
         break
       }
 
@@ -430,18 +554,13 @@
         snapshots = []
         activeStroke = null
         isDrawing = false
+        draftImage = null
         takeSnapshot()
         break
       }
 
       case 'fullRedraw': {
-        ctx.clearRect(0, 0, canvasW, canvasH)
-        snapshots = []
-        takeSnapshot()
-        for (let i = 0; i < strokes.length; i++) {
-          replayStroke(strokes[i])
-          takeSnapshot()
-        }
+        redrawCommitted()
         break
       }
 
@@ -497,6 +616,34 @@
         strokes.push(stencilStroke)
         replayStroke(stencilStroke)
         takeSnapshot()
+        break
+      }
+
+      case 'addImage': {
+        draftImage = normalizeImageOperation(data.image)
+        replayImageOperation(draftImage, { redrawWhenReady: true, reportError: true })
+        break
+      }
+
+      case 'updateImage': {
+        draftImage = normalizeImageOperation(data.image)
+        redrawCommitted()
+        break
+      }
+
+      case 'commitImage': {
+        const image = normalizeImageOperation(data.image || draftImage)
+        if (!image) break
+        strokes.push(image)
+        draftImage = null
+        redoStack = []
+        redrawCommitted()
+        break
+      }
+
+      case 'cancelImage': {
+        draftImage = null
+        redrawCommitted()
         break
       }
     }

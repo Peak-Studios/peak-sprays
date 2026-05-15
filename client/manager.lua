@@ -35,7 +35,8 @@ SprayState = {
     pendingValidate = false,
     pendingCancel = false,
     targetPaintingNormal = nil,
-    existingStrokes = nil
+    existingStrokes = nil,
+    pendingImage = nil
 }
 
 KnownPaintings = {}
@@ -321,6 +322,7 @@ function FullCleanup(hardClear)
     SprayState.pendingCancel = false
     SprayState.targetPaintingNormal = nil
     SprayState.existingStrokes = nil
+    SprayState.pendingImage = nil
     SprayState._eraseMode = false
     SprayState._duiOffset = nil
     SprayState.duiTxd = nil
@@ -331,7 +333,6 @@ function FullCleanup(hardClear)
     SetNuiFocus(false, false)
     SetNuiFocusKeepInput(false)
     SprayState._nuiMouseActive = false
-    SprayState._altMouseHeld = false
     SendNUIMessage({ action = "closeHUD" })
 end
 

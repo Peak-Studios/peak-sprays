@@ -182,6 +182,20 @@ Config.ExportLimitPerUser = 10
 Config.ExportLimitPerPainting = 3
 Config.ExportLimitResetSeconds = 3600
 
+-- Image Sprays
+Config.ImageSpraysEnabled = true
+Config.ImageAllowedHosts = {
+    'i.imgur.com',
+    'media.discordapp.net',
+    'cdn.discordapp.com',
+    'images.unsplash.com'
+}
+Config.ImageMaxPerSpray = 5
+Config.ImageDefaultSize = 256
+Config.ImageMinScale = 0.25
+Config.ImageMaxScale = 4.0
+Config.ImageUrlMaxLength = 512
+
 -- Text Scenes & Signs
 Config.ScenesEnabled = true
 Config.SceneUseCommand = true

@@ -6,7 +6,6 @@ RegisterNUICallback("releaseMouse", function(_, cb)
         SetNuiFocusKeepInput(false)
         if SprayState then
             SprayState._nuiMouseActive = false
-            SprayState._altMouseHeld = false
         end
     end
     cb({ success = true })
@@ -20,7 +19,6 @@ RegisterNUICallback("confirmSpray", function(_, cb)
         SetNuiFocusKeepInput(false)
         if SprayState then
             SprayState._nuiMouseActive = false
-            SprayState._altMouseHeld = false
         end
     end
 
@@ -39,7 +37,6 @@ RegisterNUICallback("cancelSpray", function(_, cb)
         SetNuiFocusKeepInput(false)
         if SprayState then
             SprayState._nuiMouseActive = false
-            SprayState._altMouseHeld = false
         end
     end
 
@@ -89,7 +86,20 @@ RegisterNUICallback("uiImportPainting", function(data, cb)
         if result and result.success and result.strokeData then
             SprayState.strokeHistory = result.strokeData
             SprayState.strokeCount = #result.strokeData
+            SprayState.totalPoints = 0
+            for _, stroke in ipairs(result.strokeData) do
+                if type(stroke) == "table" and type(stroke.points) == "table" then
+                    SprayState.totalPoints = SprayState.totalPoints + #stroke.points
+                end
+            end
             SendDuiMessage(SprayState.duiObject, json.encode({ action = "loadStrokes", strokes = result.strokeData }))
+            SendNUIMessage({
+                action = "strokeUpdate",
+                strokeCount = SprayState.strokeCount,
+                maxStrokes = Config.MaxStrokesPerPainting,
+                canUndo = SprayState.strokeCount > 0,
+                canRedo = false
+            })
         end
         cb(result or { success = false })
         return
@@ -98,6 +108,14 @@ RegisterNUICallback("uiImportPainting", function(data, cb)
 end)
 
 RegisterNUICallback("copyResult", function(_, cb)
+    cb({ success = true })
+end)
+
+RegisterNUICallback("imageLoadFailed", function(data, cb)
+    Peak.Client.Notify(data and data.message or "Image failed to load", "error", Config.NotifyDuration)
+    if CancelPendingImage then
+        CancelPendingImage()
+    end
     cb({ success = true })
 end)
 

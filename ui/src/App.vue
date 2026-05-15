@@ -80,6 +80,11 @@ function onMessage(event: MessageEvent) {
       hudData.canUndo             = false
       hudData.canRedo             = false
       hudData.importExportEnabled = a.importExportEnabled || false
+      hudData.imageSpraysEnabled  = a.imageSpraysEnabled || false
+      hudData.imageDefaultSize    = a.imageDefaultSize || 256
+      hudData.imageMinScale       = a.imageMinScale || 0.25
+      hudData.imageMaxScale       = a.imageMaxScale || 4
+      hudData.activeImage         = null
       hudData.lastExportCode      = ''
       hudData.paintStyles         = a.paintStyles         || []
       hudData.currentStyleIndex   = a.currentStyleIndex   || 1
@@ -128,6 +133,10 @@ function onMessage(event: MessageEvent) {
       if (a.code) hudData.lastExportCode = a.code
       break
 
+    case 'imageTransformUpdate':
+      hudData.activeImage = a.image || null
+      break
+
     case 'startSpraySound':
       startSpraySound()
       break
@@ -160,7 +169,7 @@ function onKeyEvent(e: KeyboardEvent) {
     }
   }
 
-  if (isEscape || (isAlt && e.type === 'keyup')) {
+  if (isEscape) {
     e.preventDefault()
     e.stopPropagation()
     fetchNui('releaseMouse')

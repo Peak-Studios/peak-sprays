@@ -31,6 +31,7 @@ function onDensityChange(e: Event) {
 
 // ── Import / Export ──────────────────────────────────────────────────
 const importExportCode = ref('')
+const imageUrl = ref('')
 
 function doImport() {
   const code = importExportCode.value.trim()
@@ -44,6 +45,55 @@ function doExport() {
 watch(() => hudData.lastExportCode, (v) => {
   if (v) importExportCode.value = v
 })
+
+function addImage() {
+  const url = imageUrl.value.trim()
+  if (url) fetchNui('addImageToSpray', { url })
+}
+
+function updateImage(delta: Record<string, number | boolean>) {
+  if (!hudData.activeImage) return
+  fetchNui('updateSprayImage', { ...hudData.activeImage, ...delta })
+}
+
+function nudgeImage(dx: number, dy: number) {
+  if (!hudData.activeImage) return
+  updateImage({
+    x: Number(hudData.activeImage.x || 0) + dx,
+    y: Number(hudData.activeImage.y || 0) + dy,
+  })
+}
+
+function scaleImage(mult: number) {
+  if (!hudData.activeImage) return
+  updateImage({
+    width: Number(hudData.activeImage.width || hudData.imageDefaultSize) * mult,
+    height: Number(hudData.activeImage.height || hudData.imageDefaultSize) * mult,
+  })
+}
+
+function rotateImage(deg: number) {
+  if (!hudData.activeImage) return
+  updateImage({ rotation: Number(hudData.activeImage.rotation || 0) + deg })
+}
+
+function flipImage(axis: 'x' | 'y') {
+  if (!hudData.activeImage) return
+  if (axis === 'x') {
+    updateImage({ flipX: !hudData.activeImage.flipX })
+  } else {
+    updateImage({ flipY: !hudData.activeImage.flipY })
+  }
+}
+
+function commitImage() {
+  fetchNui('commitSprayImage', {})
+  imageUrl.value = ''
+}
+
+function cancelImage() {
+  fetchNui('cancelSprayImage', {})
+}
 
 // ── Color picker / presets ───────────────────────────────────────────
 const showColorPicker = ref(false)
@@ -239,10 +289,73 @@ function selectStencil(index: number) {
         </div>
       </div>
 
+      <!-- Image Placement -->
+      <div v-if="!hudData.isEraseMode && hudData.imageSpraysEnabled" class="animate-slide-up delay-200">
+        <div class="glass-panel hud-card pointer-events-auto w-[282px] p-3 space-y-3">
+          <div class="flex justify-between items-center">
+            <span class="hud-label">Image</span>
+            <span class="hud-value">{{ hudData.activeImage ? 'Editing' : 'URL' }}</span>
+          </div>
+
+          <div v-if="!hudData.activeImage" class="flex gap-2">
+            <input
+              v-model="imageUrl"
+              type="url"
+              placeholder="HTTPS IMAGE URL..."
+              class="flex-1 bg-black/25 text-white text-[10px] font-mono px-3 py-2 rounded-lg border border-white/10 focus:border-white/30 focus:outline-none placeholder:text-white/20 transition-all"
+            />
+            <button
+              @click="addImage"
+              class="tool-btn bg-fuchsia-300/10 hover:bg-fuchsia-300/20 text-fuchsia-100"
+            >
+              <span class="text-sm font-black leading-none">+</span>
+            </button>
+          </div>
+
+          <div v-else class="space-y-3">
+            <div class="grid grid-cols-3 gap-2">
+              <button class="image-tool col-start-2" @click="nudgeImage(0, -12)">↑</button>
+              <button class="image-tool" @click="nudgeImage(-12, 0)">←</button>
+              <button class="image-tool" @click="nudgeImage(0, 12)">↓</button>
+              <button class="image-tool" @click="nudgeImage(12, 0)">→</button>
+            </div>
+
+            <div class="grid grid-cols-4 gap-2">
+              <button class="image-tool" @click="scaleImage(0.9)">−</button>
+              <button class="image-tool" @click="scaleImage(1.1)">+</button>
+              <button class="image-tool" @click="rotateImage(-15)">↺</button>
+              <button class="image-tool" @click="rotateImage(15)">↻</button>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                class="image-tool"
+                :class="{ active: hudData.activeImage.flipX }"
+                @click="flipImage('x')"
+              >
+                FLIP X
+              </button>
+              <button
+                class="image-tool"
+                :class="{ active: hudData.activeImage.flipY }"
+                @click="flipImage('y')"
+              >
+                FLIP Y
+              </button>
+            </div>
+
+            <div class="flex gap-2">
+              <button @click="commitImage" class="action-btn save-btn flex-1">PLACE</button>
+              <button @click="cancelImage" class="action-btn cancel-btn w-12">×</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Advanced Tools (Import/Export) -->
       <div
         v-if="!hudData.isEraseMode && hudData.importExportEnabled"
-        class="animate-slide-up delay-200"
+        class="animate-slide-up delay-300"
       >
         <div class="glass-panel hud-card pointer-events-auto w-[282px] p-2 flex gap-2">
           <input
@@ -492,6 +605,14 @@ function selectStencil(index: number) {
 
 .tool-btn {
   @apply w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95 border border-white/10;
+}
+
+.image-tool {
+  @apply h-8 rounded-lg bg-white/10 border border-white/10 text-white/70 text-xs font-black transition-all duration-200 hover:bg-white/20 hover:text-white active:scale-95;
+}
+
+.image-tool.active {
+  @apply bg-fuchsia-300/20 border-fuchsia-200/30 text-fuchsia-100;
 }
 
 .swatch-ring {
