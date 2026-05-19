@@ -835,7 +835,8 @@ function ValidatePainting()
         worldX = center.x,
         worldY = center.y,
         worldZ = center.z,
-        strokeCount = SprayState.strokeCount
+        strokeCount = SprayState.strokeCount,
+        activeItem = SprayState.activeItem
     }
 
     local result = Peak.Client.TriggerCallback("peak-sprays:savePainting", data)
