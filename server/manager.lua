@@ -237,7 +237,8 @@ Peak.Server.RegisterCallback("peak-sprays:savePainting", function(source, data)
     local playerName = Peak.Server.GetPlayerName(source)
     
     if Config.ConsumeSprayOnValidate then
-        Peak.Server.RemoveItem(source, Config.SprayPaintItem, 1)
+        local itemToRemove = (data.activeItem and Config.ColoredItems[data.activeItem]) and data.activeItem or Config.SprayPaintItem
+        Peak.Server.RemoveItem(source, itemToRemove, 1)
     end
     
     local expiryDate = nil

@@ -33,7 +33,7 @@ Config.ConsumeSprayOnValidate = true
 Config.ConsumeClothOnValidate = true
 Config.SprayUsesPerItem = 1
 Config.ClothUsesPerItem = 1
-Config.ColoredItems = {}
+Config.ColoredItems = Config.ColoredItems or {}
 
 -- DUI Canvas 
 Config.CanvasWidth = 1024
