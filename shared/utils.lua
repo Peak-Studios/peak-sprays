@@ -200,6 +200,29 @@ function SprayUtils.DebugPrint(...)
     end
 end
 
+--- Normalizes a configured hex color into #RRGGBB.
+--- Accepts values like "#00FF00", "00ff00", or accidental "#00FF00,".
+--- @param color any
+--- @param fallback string|nil
+--- @return string
+function SprayUtils.NormalizeHexColor(color, fallback)
+    fallback = fallback or Config.DefaultColor or "#000000"
+    if type(color) ~= "string" then return fallback end
+
+    local hex = color:gsub("^%s+", ""):gsub("%s+$", ""):gsub("[^%x]", "")
+    if #hex == 3 then
+        hex = hex:sub(1, 1) .. hex:sub(1, 1) ..
+            hex:sub(2, 2) .. hex:sub(2, 2) ..
+            hex:sub(3, 3) .. hex:sub(3, 3)
+    elseif #hex >= 6 then
+        hex = hex:sub(1, 6)
+    else
+        return fallback
+    end
+
+    return "#" .. hex:upper()
+end
+
 --- Converts a vector3 to a table.
 --- @param v vector3
 --- @return table {x, y, z}

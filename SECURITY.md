@@ -6,8 +6,8 @@ Only the latest version of Peak Sprays is supported for security updates.
 
 | Version | Supported          |
 | ------- | ------------------ |
-| v0.2.0  | :white_check_mark: |
-| < v0.2.0| :x:                |
+| v0.2.2  | :white_check_mark: |
+| < v0.2.2| :x:                |
 
 ## Reporting a Vulnerability
 
