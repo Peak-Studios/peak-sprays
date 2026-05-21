@@ -1,6 +1,6 @@
 {
   "peak-sprays": {
-    "version": "0.2.2",
-    "changelog": "- Fixed colored spray items rendering as black when configured color values include stray punctuation or invalid formatting.\n- Added server/client color normalization so item colors, picker colors, particles, and saved strokes consistently use #RRGGBB.\n- Preserved the active colored item through save so the correct item is consumed."
+    "version": "0.2.3",
+    "changelog": "- Fixed spray saving failures caused by missing spray_paintings.gang_id and spray_paintings.status columns.\n- Added the missing columns and indexes to fresh install SQL.\n- Added a one-time migration for existing v0.2.2 installs."
   }
 }
