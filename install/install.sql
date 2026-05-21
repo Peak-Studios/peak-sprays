@@ -2,6 +2,8 @@ CREATE TABLE IF NOT EXISTS `spray_paintings` (
     `id` INT(11) NOT NULL AUTO_INCREMENT,
     `identifier` VARCHAR(60) NOT NULL COMMENT 'Player citizenid or framework identifier',
     `player_name` VARCHAR(100) DEFAULT 'Unknown',
+    `gang_id` VARCHAR(60) DEFAULT NULL COMMENT 'Optional territory/gang owner for gang spray integrations',
+    `status` VARCHAR(20) NOT NULL DEFAULT 'normal' COMMENT 'Spray lifecycle/status marker',
     `corners` JSON NOT NULL COMMENT 'Four world-space canvas corners: topLeft, topRight, bottomLeft, bottomRight',
     `normal` JSON NOT NULL COMMENT 'World-space surface normal vector: x, y, z',
     `stroke_data` LONGTEXT NOT NULL COMMENT 'Serialized stroke history, including erase strokes',
@@ -17,6 +19,8 @@ CREATE TABLE IF NOT EXISTS `spray_paintings` (
     PRIMARY KEY (`id`),
     INDEX `idx_world_coords` (`world_x`, `world_y`, `world_z`),
     INDEX `idx_identifier` (`identifier`),
+    INDEX `idx_gang_id` (`gang_id`),
+    INDEX `idx_status` (`status`),
     INDEX `idx_expires_at` (`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

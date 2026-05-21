@@ -43,6 +43,7 @@ If you are using an AI coding assistant (like Claude, ChatGPT, or Cursor), you c
 ### Manual Setup
 1. Place this resource in your server resources folder as `peak-sprays`.
 2. Import [install/install.sql](install/install.sql) into your database.
+   - If you already installed v0.2.2 before this schema fix, run [install/migration_0.2.2_spray_gang_status.sql](install/migration_0.2.2_spray_gang_status.sql) once instead of re-importing the full install file.
 3. Import [install/install_gangs.sql](install/install_gangs.sql) if you are testing gang laptop or turf features.
 4. Add the inventory items from [install](install) if you use item-based spray painting.
 5. Configure [shared/config.lua](shared/config.lua) and [server/server-config.lua](server/server-config.lua).
