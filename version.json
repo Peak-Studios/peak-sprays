@@ -1,6 +1,6 @@
 {
   "peak-sprays": {
-    "version": "0.2.1",
-    "changelog": "- WIP gang laptop and spray turf upgrade with a smaller transparent NUI shell.\n- Added Leaflet territory map support using the packaged GTA map image.\n- Added gang dashboard, turf summary, discovered sprays, and contested turf metadata.\n- Synced gang spray XP/tier updates across create, erase, and contest flows.\n- Unfinished: requires full FXServer and in-game testing before production use."
+    "version": "0.2.3",
+    "changelog": "- Fixed spray saving failures caused by missing spray_paintings.gang_id and spray_paintings.status columns.\n- Added the missing columns and indexes to fresh install SQL.\n- Added a one-time migration for existing v0.2.2 installs."
   }
 }

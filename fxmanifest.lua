@@ -2,7 +2,7 @@ fx_version 'cerulean'
 game 'gta5'
 author 'Peak Studios'
 description 'Peak Sprays'
-version '0.2.1'
+version '0.2.3'
 lua54 'yes'
 
 shared_scripts {
