@@ -59,6 +59,12 @@ local function hydrate(row)
         end
     end
 
+    local discoveredSprays = decode(row.discovered_sprays, {})
+    local discoveredSet = {}
+    for _, sprayId in ipairs(discoveredSprays) do
+        discoveredSet[tonumber(sprayId)] = true
+    end
+
     local gang = {
         id = row.id,
         name = row.name,
@@ -66,7 +72,8 @@ local function hydrate(row)
         members = decode(row.members, {}),
         metadata = metadata,
         official_mark = decode(row.official_mark, nil),
-        discovered_sprays = decode(row.discovered_sprays, {}),
+        discovered_sprays = discoveredSprays,
+        _discoveredSet = discoveredSet,
     }
     gang.metadata.xp = tonumber(gang.metadata.xp) or 0
     gang.metadata.crimeXp = tonumber(gang.metadata.crimeXp) or 0
@@ -195,14 +202,14 @@ end
 
 function Peak.Gangs.AddDiscoveredSpray(gangId, sprayId)
     local gang = gangCache[tonumber(gangId)]
-    if not gang or not sprayId then return false end
-
+    if not gang then return false end
     gang.discovered_sprays = gang.discovered_sprays or {}
-    for _, id in ipairs(gang.discovered_sprays) do
-        if tonumber(id) == tonumber(sprayId) then return true end
-    end
+    gang._discoveredSet = gang._discoveredSet or {}
+    
+    if gang._discoveredSet[tonumber(sprayId)] then return true end
 
     table.insert(gang.discovered_sprays, tonumber(sprayId))
+    gang._discoveredSet[tonumber(sprayId)] = true
     saveGang(gang)
     return true
 end
@@ -210,10 +217,14 @@ end
 function Peak.Gangs.RemoveDiscoveredSpray(sprayId)
     for _, gang in pairs(gangCache) do
         local changed = false
-        for index = #(gang.discovered_sprays or {}), 1, -1 do
-            if tonumber(gang.discovered_sprays[index]) == tonumber(sprayId) then
-                table.remove(gang.discovered_sprays, index)
-                changed = true
+        gang._discoveredSet = gang._discoveredSet or {}
+        if gang._discoveredSet[tonumber(sprayId)] then
+            gang._discoveredSet[tonumber(sprayId)] = nil
+            for index = #(gang.discovered_sprays or {}), 1, -1 do
+                if tonumber(gang.discovered_sprays[index]) == tonumber(sprayId) then
+                    table.remove(gang.discovered_sprays, index)
+                    changed = true
+                end
             end
         end
         if changed then saveGang(gang) end

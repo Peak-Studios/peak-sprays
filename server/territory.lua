@@ -30,27 +30,29 @@ local function playerCoords(src)
 end
 
 local function getNearbySprays(coords, radius)
-    return Peak.Server.ExecuteSQL([[
-        SELECT id, gang_id, status, contest_data, world_x, world_y, world_z
-        FROM spray_paintings
-        WHERE gang_id IS NOT NULL
-          AND world_x BETWEEN @minX AND @maxX
-          AND world_y BETWEEN @minY AND @maxY
-    ]], {
-        ["@minX"] = coords.x - radius,
-        ["@maxX"] = coords.x + radius,
-        ["@minY"] = coords.y - radius,
-        ["@maxY"] = coords.y + radius,
-    }) or {}
+    local nearby = {}
+    local minX, maxX = coords.x - radius, coords.x + radius
+    local minY, maxY = coords.y - radius, coords.y + radius
+    
+    for _, p in pairs(Peak.Server.KnownPaintingsCache or {}) do
+        if p.gang_id and p.world_x and p.world_y then
+            if p.world_x >= minX and p.world_x <= maxX and p.world_y >= minY and p.world_y <= maxY then
+                table.insert(nearby, p)
+            end
+        end
+    end
+    return nearby
 end
 
 local function enrichSpray(row, viewerGang)
     local gangId = tonumber(row.gang_id)
     local gang = Peak.Gangs and Peak.Gangs.GetGang(gangId) or nil
-    local contest = decode(row.contest_data, nil)
+    local contest = row.contest_data and (type(row.contest_data) == "table" and row.contest_data or decode(row.contest_data, nil)) or activeContests[row.id]
     local discovered = false
 
-    if viewerGang and viewerGang.discovered_sprays then
+    if viewerGang and viewerGang._discoveredSet then
+        discovered = viewerGang._discoveredSet[tonumber(row.id)] == true
+    elseif viewerGang and viewerGang.discovered_sprays then
         for _, sprayId in ipairs(viewerGang.discovered_sprays) do
             if tonumber(sprayId) == tonumber(row.id) then
                 discovered = true
@@ -123,6 +125,12 @@ local function startContest(source, spray, attackerGangId, coords)
         })
     end
 
+    -- Update memory cache status
+    if Peak.Server.KnownPaintingsCache[spray.id] then
+        Peak.Server.KnownPaintingsCache[spray.id].status = 'contested'
+        Peak.Server.KnownPaintingsCache[spray.id].contest_data = contest
+    end
+
     Peak.Server.UpdateSQL([[
         UPDATE spray_paintings
         SET status = 'contested', contest_data = @contest_data
@@ -148,6 +156,10 @@ local function startContest(source, spray, attackerGangId, coords)
             local attackerCoords = playerCoords(current.attacker)
             if not attackerCoords or distance(attackerCoords, current.center) > radius then
                 activeContests[spray.id] = nil
+                if Peak.Server.KnownPaintingsCache[spray.id] then
+                    Peak.Server.KnownPaintingsCache[spray.id].status = 'normal'
+                    Peak.Server.KnownPaintingsCache[spray.id].contest_data = nil
+                end
                 Peak.Server.UpdateSQL("UPDATE spray_paintings SET status = 'normal', contest_data = NULL WHERE id = @id", {
                     ["@id"] = spray.id
                 })
@@ -167,6 +179,10 @@ local function startContest(source, spray, attackerGangId, coords)
 
             if os.time() - current.startTime >= duration then
                 activeContests[spray.id] = nil
+                if Peak.Server.KnownPaintingsCache[spray.id] then
+                    Peak.Server.KnownPaintingsCache[spray.id] = nil
+                    Peak.Server.StrokeDataCache[spray.id] = nil
+                end
                 Peak.Server.UpdateSQL("DELETE FROM spray_paintings WHERE id = @id", { ["@id"] = spray.id })
                 if Peak.Gangs then
                     Peak.Gangs.RemoveDiscoveredSpray(spray.id)
@@ -241,28 +257,17 @@ end
 
 Peak.Server.RegisterCallback("peak-sprays:territory:getMap", function(source)
     local viewerGang = Peak.Gangs and Peak.Gangs.GetPlayerGang(source) or nil
-    local rows = Peak.Server.ExecuteSQL([[
-        SELECT id, gang_id, status, contest_data, world_x, world_y, world_z, created_at
-        FROM spray_paintings
-        WHERE gang_id IS NOT NULL
-    ]], {}) or {}
-
     local result = {}
-    for _, row in ipairs(rows) do
-        table.insert(result, enrichSpray(row, viewerGang))
+    for _, p in pairs(Peak.Server.KnownPaintingsCache or {}) do
+        if p.gang_id then
+            table.insert(result, enrichSpray(p, viewerGang))
+        end
     end
     return result
 end)
 
 Peak.Server.RegisterCallback("peak-sprays:territory:getSummary", function(source)
     local gang = Peak.Gangs and Peak.Gangs.GetPlayerGang(source) or nil
-    local rows = Peak.Server.ExecuteSQL([[
-        SELECT gang_id, status, COUNT(*) AS total
-        FROM spray_paintings
-        WHERE gang_id IS NOT NULL
-        GROUP BY gang_id, status
-    ]], {}) or {}
-
     local summary = {
         total = 0,
         contested = 0,
@@ -271,23 +276,24 @@ Peak.Server.RegisterCallback("peak-sprays:territory:getSummary", function(source
         discovered = gang and #(gang.discovered_sprays or {}) or 0,
     }
 
-    for _, row in ipairs(rows) do
-        local gangId = tonumber(row.gang_id)
-        local status = row.status or "normal"
-        local count = tonumber(row.total) or 0
-        local gangData = Peak.Gangs and Peak.Gangs.GetGang(gangId) or nil
-        summary.total = summary.total + count
-        if status == "contested" then summary.contested = summary.contested + count end
-        summary.gangs[gangId] = summary.gangs[gangId] or {
-            id = gangId,
-            name = gangData and gangData.name or ("Gang " .. tostring(gangId)),
-            color = gangData and gangData.color or gangColor(gangId),
-            total = 0,
-            contested = 0,
-        }
-        summary.gangs[gangId].total = summary.gangs[gangId].total + count
-        if status == "contested" then
-            summary.gangs[gangId].contested = summary.gangs[gangId].contested + count
+    for _, p in pairs(Peak.Server.KnownPaintingsCache or {}) do
+        if p.gang_id then
+            local gangId = tonumber(p.gang_id)
+            local status = p.status or "normal"
+            local gangData = Peak.Gangs and Peak.Gangs.GetGang(gangId) or nil
+            summary.total = summary.total + 1
+            if status == "contested" then summary.contested = summary.contested + 1 end
+            summary.gangs[gangId] = summary.gangs[gangId] or {
+                id = gangId,
+                name = gangData and gangData.name or ("Gang " .. tostring(gangId)),
+                color = gangData and gangData.color or gangColor(gangId),
+                total = 0,
+                contested = 0,
+            }
+            summary.gangs[gangId].total = summary.gangs[gangId].total + 1
+            if status == "contested" then
+                summary.gangs[gangId].contested = summary.gangs[gangId].contested + 1
+            end
         end
     end
 
@@ -305,20 +311,18 @@ end)
 Peak.Server.RegisterCallback("peak-sprays:territory:toggleContested", function(source)
     local gang = Peak.Gangs and Peak.Gangs.GetPlayerGang(source) or nil
     if not gang then return { success = false, message = "No gang found.", sprays = {} } end
-    local rows = Peak.Server.ExecuteSQL([[
-        SELECT id, gang_id, status, contest_data, world_x, world_y, world_z, created_at
-        FROM spray_paintings
-        WHERE status = 'contested'
-          AND (gang_id = @gang_id OR contest_data LIKE @attacker)
-    ]], {
-        ["@gang_id"] = gang.id,
-        ["@attacker"] = '%"attackerGangId":' .. tostring(gang.id) .. '%',
-    }) or {}
-
     local result = {}
-    for _, row in ipairs(rows) do
-        table.insert(result, enrichSpray(row, gang))
+
+    for _, p in pairs(Peak.Server.KnownPaintingsCache or {}) do
+        if p.status == 'contested' then
+            local isGangOwned = p.gang_id and tonumber(p.gang_id) == gang.id
+            local isAttacker = activeContests[p.id] and activeContests[p.id].attackerGangId == gang.id
+            if isGangOwned or isAttacker then
+                table.insert(result, enrichSpray(p, gang))
+            end
+        end
     end
+
     return { success = true, sprays = result }
 end)
 
