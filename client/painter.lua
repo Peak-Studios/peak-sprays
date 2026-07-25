@@ -172,12 +172,25 @@ function PaintingControlDisableLoop()
     end
 end
 
+local CircleSegments = 16
+local CircleCos = {}
+local CircleSin = {}
+local Step = (2.0 * math.pi) / CircleSegments
+for i = 0, CircleSegments do
+    local angle = i * Step
+    CircleCos[i] = math.cos(angle)
+    CircleSin[i] = math.sin(angle)
+end
+
 function PaintingRenderLoop()
     while SprayState.mode == "painting" do
         Wait(0)
         local corners = SprayState.corners
         if corners and SprayState.duiObject then
             local hit, hitCoords, camCoord = RaycastModule.FromCameraToPlane(corners.bottomLeft, SprayState.surfaceNormal, Config.PaintMaxDistance)
+            SprayState._lastFrameHit = hit
+            SprayState._lastFrameHitCoords = hitCoords
+
             if hit then
                 local pedCoords = GetEntityCoords(PlayerPedId())
                 local dist = #(pedCoords - hitCoords)
@@ -202,14 +215,10 @@ function PaintingRenderLoop()
                 local right = norm(corners.bottomRight - corners.bottomLeft)
                 local up = norm(corners.topLeft - corners.bottomLeft)
 
-                -- Draw Circle preview
-                local segments = 24
-                local step = (2.0 * math.pi) / segments
-                for i = 0, segments - 1 do
-                    local angle1 = i * step
-                    local angle2 = (i + 1) * step
-                    local p1 = hitCoords + right * (math.cos(angle1) * canvasScale) + up * (math.sin(angle1) * canvasScale)
-                    local p2 = hitCoords + right * (math.cos(angle2) * canvasScale) + up * (math.sin(angle2) * canvasScale)
+                -- Draw Circle preview using lookup table
+                for i = 0, CircleSegments - 1 do
+                    local p1 = hitCoords + right * (CircleCos[i] * canvasScale) + up * (CircleSin[i] * canvasScale)
+                    local p2 = hitCoords + right * (CircleCos[i + 1] * canvasScale) + up * (CircleSin[i + 1] * canvasScale)
                     DrawLine(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z, 255, 255, 255, 220)
                 end
 
