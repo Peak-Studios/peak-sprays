@@ -49,9 +49,10 @@ end)
 
 RegisterNUICallback("changeColor", function(data, cb)
     if SprayState and data and data.color and not SprayState.forcedColor then
-        SprayState.currentColor = data.color
+        local color = SprayUtils.NormalizeHexColor(data.color, SprayState.currentColor or Config.DefaultColor)
+        SprayState.currentColor = color
         if SprayState.duiObject then
-            SendDuiMessage(SprayState.duiObject, json.encode({ action = "updateBrush", color = data.color }))
+            SendDuiMessage(SprayState.duiObject, json.encode({ action = "updateBrush", color = color }))
         end
     end
     cb({ success = true })

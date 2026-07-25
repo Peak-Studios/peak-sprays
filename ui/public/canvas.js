@@ -25,12 +25,25 @@
   }
 
   function hexToRgb(color) {
-    const hex = typeof color === 'string' && color[0] === '#' ? color : '#000000'
+    const hex = normalizeColor(color)
     return {
       r: parseInt(hex.slice(1, 3), 16) || 0,
       g: parseInt(hex.slice(3, 5), 16) || 0,
       b: parseInt(hex.slice(5, 7), 16) || 0,
     }
+  }
+
+  function normalizeColor(color, fallback = '#000000') {
+    if (typeof color !== 'string') return fallback
+    let hex = color.trim().replace(/[^a-fA-F0-9]/g, '')
+    if (hex.length === 3) {
+      hex = hex.split('').map((c) => c + c).join('')
+    } else if (hex.length >= 6) {
+      hex = hex.slice(0, 6)
+    } else {
+      return fallback
+    }
+    return `#${hex.toUpperCase()}`
   }
 
   function takeSnapshot() {
@@ -128,7 +141,7 @@
       }
     } else if (stroke.type === 'stencil') {
       ctx.save()
-      ctx.fillStyle = stroke.color || '#000000'
+      ctx.fillStyle = normalizeColor(stroke.color)
       ctx.globalAlpha = stroke.pressure || 1.0
       ctx.beginPath()
       ctx.moveTo(pts[0].x, pts[0].y)
@@ -178,7 +191,7 @@
   function drawDot(x, y, size, color, pressure) {
     ctx.save()
     ctx.globalAlpha = clamp(0.9 * (pressure || 1) + 0.1, 0, 1)
-    ctx.fillStyle = color
+    ctx.fillStyle = normalizeColor(color)
     ctx.beginPath()
     ctx.arc(x, y, Math.max(0.5, 0.5 * size), 0, 2 * Math.PI)
     ctx.fill()
@@ -205,7 +218,7 @@
   function drawLine(x1, y1, x2, y2, size, color, pressure) {
     ctx.save()
     ctx.globalAlpha = clamp(0.9 * (pressure || 1) + 0.1, 0, 1)
-    ctx.strokeStyle = color
+    ctx.strokeStyle = normalizeColor(color)
     ctx.lineWidth = Math.max(0.75, size)
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
@@ -294,7 +307,7 @@
     const size = Math.max(1, stroke.size || 10)
     const density = Math.max(1, stroke.density || 25)
     const pressure = stroke.pressure || 0.8
-    const color = stroke.color || '#000000'
+    const color = normalizeColor(stroke.color)
     const scatter = stroke.scatter !== undefined ? stroke.scatter : 1
 
     if (style === 'pen') {
@@ -322,7 +335,7 @@
     const size = Math.max(1, stroke.size || 10)
     const density = Math.max(1, stroke.density || 25)
     const pressure = stroke.pressure || 0.8
-    const color = stroke.color || '#000000'
+    const color = normalizeColor(stroke.color)
     const scatter = stroke.scatter !== undefined ? stroke.scatter : 1
     const segLen = Math.hypot(point.x - prev.x, point.y - prev.y)
 
@@ -439,7 +452,7 @@
         activeStroke = {
           type: data.type || 'paint',
           style: data.style || undefined,
-          color: data.color || '#000000',
+          color: normalizeColor(data.color),
           size: data.size || 10,
           density: data.density || 25,
           pressure: data.pressure || 0.8,
@@ -590,7 +603,7 @@
         if (activeStroke) {
           if (data.size !== undefined) activeStroke.size = data.size
           if (data.density !== undefined) activeStroke.density = data.density
-          if (data.color !== undefined) activeStroke.color = data.color
+          if (data.color !== undefined) activeStroke.color = normalizeColor(data.color, activeStroke.color)
           if (data.pressure !== undefined) activeStroke.pressure = data.pressure
           if (data.scatter !== undefined) activeStroke.scatter = data.scatter
           if (data.style !== undefined) activeStroke.style = data.style
@@ -600,7 +613,7 @@
 
       case 'stampStencil': {
         const points = data.points || []
-        const color = data.color || '#000000'
+        const color = normalizeColor(data.color)
         const size = data.size || 10
         const x = data.x
         const y = data.y

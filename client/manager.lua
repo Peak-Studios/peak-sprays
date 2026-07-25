@@ -14,6 +14,7 @@ SprayState = {
     upAxis = nil,
     currentColor = Config.DefaultColor,
     forcedColor = nil,
+    activeItem = nil,
     brushIndex = Config.DefaultBrushSizeIndex,
     pressure = Config.DefaultPressure,
     strokeCount = 0,
@@ -86,6 +87,7 @@ if Config.UseItem then
     RegisterNetEvent("peak-sprays:useSprayPaint", function(itemName)
         if SprayState.mode ~= "idle" then return end
 
+        SprayState.activeItem = itemName
         local color = Config.ColoredItems[itemName]
         SprayState.activeItem = itemName
         StartSelectionMode(color)
@@ -105,6 +107,7 @@ if Config.UseCommand then
             Peak.Client.Notify(L("no_item"), "error", Config.NotifyDuration)
             return
         end
+        SprayState.activeItem = nil
         StartSelectionMode(nil)
     end, false)
 
@@ -131,14 +134,15 @@ function StartSelectionMode(forcedColor)
         return
     end
 
-    SprayUtils.DebugPrint("[Selection] Starting selection mode, forcedColor:", tostring(forcedColor))
+    local normalizedColor = forcedColor and SprayUtils.NormalizeHexColor(forcedColor, Config.DefaultColor) or nil
+    SprayUtils.DebugPrint("[Selection] Starting selection mode, forcedColor:", tostring(forcedColor), "normalized:", tostring(normalizedColor))
 
     SprayState.mode = "selecting"
     SprayState.corner1 = nil
     SprayState.corner2 = nil
     SprayState.surfaceNormal = nil
-    SprayState.forcedColor = forcedColor
-    SprayState.currentColor = forcedColor or Config.DefaultColor
+    SprayState.forcedColor = normalizedColor
+    SprayState.currentColor = normalizedColor or SprayUtils.NormalizeHexColor(Config.DefaultColor, "#000000")
     SprayState.brushIndex = Config.DefaultBrushSizeIndex
 
     SetFollowPedCamViewMode(4)
@@ -246,6 +250,7 @@ function CancelSelection()
     SprayState.corner2 = nil
     SprayState.surfaceNormal = nil
     SprayState.forcedColor = nil
+    SprayState.activeItem = nil
     Peak.Client.Notify(L("selection_cancelled"), "info", Config.NotifyDuration)
 end
 
@@ -320,6 +325,7 @@ function FullCleanup(hardClear)
     SprayState.rightAxis = nil
     SprayState.upAxis = nil
     SprayState.forcedColor = nil
+    SprayState.activeItem = nil
     SprayState.isDrawing = false
     SprayState.strokeCount = 0
     SprayState.totalPoints = 0

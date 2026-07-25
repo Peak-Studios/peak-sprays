@@ -8,6 +8,8 @@ local activeDuiId = 0
 function StartPaintingMode()
     SprayUtils.DebugPrint("[Paint] Entering painting mode")
     SprayState.mode = "painting"
+    SprayState.currentColor = SprayUtils.NormalizeHexColor(SprayState.currentColor, Config.DefaultColor)
+    SprayUtils.DebugPrint("[Paint] Active color:", SprayState.currentColor)
     SprayState.strokeCount = 0
     SprayState.totalPoints = 0
     SprayState.strokeHistory = {}
@@ -170,12 +172,25 @@ function PaintingControlDisableLoop()
     end
 end
 
+local CircleSegments = 16
+local CircleCos = {}
+local CircleSin = {}
+local Step = (2.0 * math.pi) / CircleSegments
+for i = 0, CircleSegments do
+    local angle = i * Step
+    CircleCos[i] = math.cos(angle)
+    CircleSin[i] = math.sin(angle)
+end
+
 function PaintingRenderLoop()
     while SprayState.mode == "painting" do
         Wait(0)
         local corners = SprayState.corners
         if corners and SprayState.duiObject then
             local hit, hitCoords, camCoord = RaycastModule.FromCameraToPlane(corners.bottomLeft, SprayState.surfaceNormal, Config.PaintMaxDistance)
+            SprayState._lastFrameHit = hit
+            SprayState._lastFrameHitCoords = hitCoords
+
             if hit then
                 local pedCoords = GetEntityCoords(PlayerPedId())
                 local dist = #(pedCoords - hitCoords)
@@ -200,14 +215,10 @@ function PaintingRenderLoop()
                 local right = norm(corners.bottomRight - corners.bottomLeft)
                 local up = norm(corners.topLeft - corners.bottomLeft)
 
-                -- Draw Circle preview
-                local segments = 24
-                local step = (2.0 * math.pi) / segments
-                for i = 0, segments - 1 do
-                    local angle1 = i * step
-                    local angle2 = (i + 1) * step
-                    local p1 = hitCoords + right * (math.cos(angle1) * canvasScale) + up * (math.sin(angle1) * canvasScale)
-                    local p2 = hitCoords + right * (math.cos(angle2) * canvasScale) + up * (math.sin(angle2) * canvasScale)
+                -- Draw Circle preview using lookup table
+                for i = 0, CircleSegments - 1 do
+                    local p1 = hitCoords + right * (CircleCos[i] * canvasScale) + up * (CircleSin[i] * canvasScale)
+                    local p2 = hitCoords + right * (CircleCos[i + 1] * canvasScale) + up * (CircleSin[i + 1] * canvasScale)
                     DrawLine(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z, 255, 255, 255, 220)
                 end
 
@@ -343,6 +354,7 @@ function HandlePaintInput(time)
     local brush = Config.BrushSizes[SprayState.brushIndex]
     local style = Config.PaintStyles[SprayState.styleIndex] or Config.PaintStyles[Config.DefaultPaintStyleIndex or 1] or { id = "spray" }
     local styleId = style.id or "spray"
+    local strokeColor = SprayUtils.NormalizeHexColor(SprayState.currentColor, Config.DefaultColor)
     
     local size = math.floor(brush.size * spreadMult)
     local density = SprayState.density or 0.7
@@ -412,7 +424,7 @@ function HandlePaintInput(time)
         local newStroke = {
             type = "paint",
             style = styleId,
-            color = SprayState.currentColor,
+            color = strokeColor,
             size = size,
             density = scatterCount,
             pressure = finalPressure,
@@ -429,14 +441,14 @@ function HandlePaintInput(time)
             style = styleId,
             x = x,
             y = y,
-            color = SprayState.currentColor,
+            color = strokeColor,
             size = size,
             density = scatterCount,
             pressure = finalPressure,
             scatter = finalScatter
         }))
         StartSpraySound()
-        StartSprayParticle(SprayState.currentColor)
+        StartSprayParticle(strokeColor)
     else
         local currentStroke = SprayState.strokeHistory[SprayState.activeStrokeIndex or #SprayState.strokeHistory]
         if currentStroke then
@@ -508,10 +520,11 @@ function TriggerDrip(startX, startY, size, pressure)
     if #dripPoints < 2 then return end
     if SprayState.totalPoints + #dripPoints > (Config.MaxTotalPoints or 50000) then return end
     
+    local strokeColor = SprayUtils.NormalizeHexColor(SprayState.currentColor, Config.DefaultColor)
     local dripStroke = {
         type = "paint",
         style = "drip-run",
-        color = SprayState.currentColor,
+        color = strokeColor,
         size = dripSize,
         density = 1,
         pressure = pressure * 0.7,
@@ -549,9 +562,10 @@ function TriggerStencil(x, y, size)
         table.insert(stencilPoints, { x = x + p.x * (size/10), y = y + p.y * (size/10) })
     end
     
+    local strokeColor = SprayUtils.NormalizeHexColor(SprayState.currentColor, Config.DefaultColor)
     local stencilStroke = {
         type = "stencil",
-        color = SprayState.currentColor,
+        color = strokeColor,
         size = size,
         points = stencilPoints,
         pressure = 1.0
@@ -566,7 +580,7 @@ function TriggerStencil(x, y, size)
         x = x,
         y = y,
         size = size,
-        color = SprayState.currentColor,
+        color = strokeColor,
         points = stencil.points
     }))
     

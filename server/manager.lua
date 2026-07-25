@@ -182,38 +182,50 @@ Peak.Server.RegisterCallback("peak-sprays:validateImageUrl", function(source, ur
     return { success = ok, message = message }
 end)
 
+Peak.Server.KnownPaintingsCache = {}
+Peak.Server.StrokeDataCache = {}
+Peak.Server.PaintingsLoaded = false
+
+CreateThread(function()
+    Wait(1500)
+    local result = Peak.Server.ExecuteSQL("SELECT id, corners, normal, stroke_data, canvas_width, canvas_height, world_x, world_y, world_z, stroke_count, gang_id, status FROM spray_paintings", {})
+    if result then
+        for _, row in ipairs(result) do
+            local corners = json.decode(row.corners)
+            local normal = json.decode(row.normal)
+            local strokeData = json.decode(row.stroke_data)
+            
+            Peak.Server.KnownPaintingsCache[row.id] = {
+                id = row.id,
+                corners = corners,
+                normal = normal,
+                canvas_width = row.canvas_width,
+                canvas_height = row.canvas_height,
+                world_x = row.world_x,
+                world_y = row.world_y,
+                world_z = row.world_z,
+                stroke_count = row.stroke_count,
+                gang_id = row.gang_id,
+                status = row.status
+            }
+            Peak.Server.StrokeDataCache[row.id] = strokeData
+        end
+    end
+    Peak.Server.PaintingsLoaded = true
+end)
+
 Peak.Server.RegisterCallback("peak-sprays:getPaintings", function(source)
-    local result = Peak.Server.ExecuteSQL("SELECT id, corners, normal, canvas_width, canvas_height, world_x, world_y, world_z, stroke_count, gang_id, status FROM spray_paintings", {})
-    if not result then return {} end
-    
+    while not Peak.Server.PaintingsLoaded do Wait(50) end
     local paintings = {}
-    for _, row in ipairs(result) do
-        table.insert(paintings, {
-            id = row.id,
-            corners = json.decode(row.corners),
-            normal = json.decode(row.normal),
-            canvas_width = row.canvas_width,
-            canvas_height = row.canvas_height,
-            world_x = row.world_x,
-            world_y = row.world_y,
-            world_z = row.world_z,
-            stroke_count = row.stroke_count,
-            gang_id = row.gang_id,
-            status = row.status
-        })
+    for _, p in pairs(Peak.Server.KnownPaintingsCache) do
+        table.insert(paintings, p)
     end
     return paintings
 end)
 
 Peak.Server.RegisterCallback("peak-sprays:getStrokeData", function(source, paintingId)
     if not paintingId or type(paintingId) ~= "number" then return nil end
-
-    local result = Peak.Server.ExecuteSQL("SELECT stroke_data FROM spray_paintings WHERE id = @id", {
-        ["@id"] = paintingId
-    })
-
-    if not result or not result[1] or not result[1].stroke_data then return nil end
-    return json.decode(result[1].stroke_data)
+    return Peak.Server.StrokeDataCache[paintingId]
 end)
 
 Peak.Server.RegisterCallback("peak-sprays:savePainting", function(source, data)
@@ -282,6 +294,10 @@ Peak.Server.RegisterCallback("peak-sprays:savePainting", function(source, data)
         status = "normal"
     }
     
+    -- Update in-memory cache immediately
+    Peak.Server.KnownPaintingsCache[insertId] = clientData
+    Peak.Server.StrokeDataCache[insertId] = data.strokeData
+
     TriggerClientEvent("peak-sprays:cl:newPainting", -1, clientData)
     LogPaintCreate(source, playerName, identifier, insertId, data)
     OnServerSprayCompleted(source, insertId, data)
@@ -307,6 +323,10 @@ Peak.Server.RegisterCallback("peak-sprays:erasePainting", function(source, paint
     
     local rows = Peak.Server.UpdateSQL("DELETE FROM spray_paintings WHERE id = @id", { ["@id"] = paintingId })
     if rows and rows > 0 then
+        -- Evict from in-memory cache
+        Peak.Server.KnownPaintingsCache[paintingId] = nil
+        Peak.Server.StrokeDataCache[paintingId] = nil
+
         if Peak.Gangs then
             Peak.Gangs.RemoveDiscoveredSpray(paintingId)
             if gangId then
@@ -351,6 +371,12 @@ Peak.Server.RegisterCallback("peak-sprays:updatePainting", function(source, data
     })
 
     if rows and rows > 0 then
+        -- Update in-memory cache
+        if Peak.Server.KnownPaintingsCache[data.paintingId] then
+            Peak.Server.KnownPaintingsCache[data.paintingId].stroke_count = data.strokeCount or #data.strokeData
+        end
+        Peak.Server.StrokeDataCache[data.paintingId] = data.strokeData
+
         TriggerClientEvent("peak-sprays:cl:updatePainting", -1, {
             id = data.paintingId,
             stroke_count = data.strokeCount or #data.strokeData
