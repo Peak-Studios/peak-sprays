@@ -340,6 +340,7 @@ function FullCleanup(hardClear)
     SprayState.existingStrokes = nil
     SprayState.pendingImage = nil
     SprayState._eraseMode = false
+    SprayState.isFullClear = false
     SprayState._duiOffset = nil
     SprayState.duiTxd = nil
     SprayState.duiTxn = nil
@@ -376,7 +377,11 @@ end)
 RegisterNetEvent("peak-sprays:cl:removePainting", function(id)
     local p = KnownPaintings[id]
     if p then
-        if p.duiObj then DestroyDui(p.duiObj) end
+        if UnloadRenderer then
+            UnloadRenderer(p)
+        elseif p.duiObj then
+            DestroyDui(p.duiObj)
+        end
         KnownPaintings[id] = nil
     end
 end)
@@ -385,7 +390,9 @@ RegisterNetEvent("peak-sprays:cl:updatePainting", function(data)
     local p = KnownPaintings[data.id]
     if p then
         p.strokeCount = data.stroke_count
-        if p.duiObj then
+        if UnloadRenderer then
+            UnloadRenderer(p)
+        elseif p.duiObj then
             DestroyDui(p.duiObj)
             p.duiObj = nil
         end
@@ -398,6 +405,10 @@ AddEventHandler("onResourceStop", function(resourceName)
     if resourceName ~= GetCurrentResourceName() then return end
     FullCleanup(true)
     for _, p in pairs(KnownPaintings) do
-        if p.duiObj then DestroyDui(p.duiObj) end
+        if UnloadRenderer then
+            UnloadRenderer(p)
+        elseif p.duiObj then
+            DestroyDui(p.duiObj)
+        end
     end
 end)

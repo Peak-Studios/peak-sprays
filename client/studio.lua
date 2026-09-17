@@ -38,3 +38,23 @@ RegisterNetEvent("peak-sprays:cl:gangTemplateUpdated", function(data)
         gang = data and data.gang
     })
 end)
+
+-- Framework Gang Update Listeners for dynamic library invalidation
+RegisterNetEvent("QBCore:Client:OnGangUpdate", function(gang)
+    SendNUIMessage({
+        action = "refreshDesignsLibrary",
+        gang = gang and gang.name
+    })
+end)
+
+RegisterNetEvent("esx:setJob", function(job)
+    SendNUIMessage({
+        action = "refreshDesignsLibrary"
+    })
+end)
+
+RegisterNetEvent("esx:setJob2", function(job2)
+    SendNUIMessage({
+        action = "refreshDesignsLibrary"
+    })
+end)

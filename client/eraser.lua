@@ -329,6 +329,7 @@ function EraserInputLoop()
                 SprayState.strokeCount = 0
                 SprayState.totalPoints = 0
                 SprayState.existingStrokes = {}
+                SprayState.isFullClear = true
                 Peak.Client.Notify(L("eraser_cleared_all"), "info", Config.NotifyDuration)
             end
         end
@@ -427,30 +428,21 @@ function ValidateErase()
     if SprayState.isDrawing then EndCurrentStroke() end
     ClearPedTasks(PlayerPedId())
 
-    -- No-op check: If no new erase strokes were performed, do not update or consume cloth!
-    if not SprayState.strokeHistory or #SprayState.strokeHistory == 0 then
+    -- No-op check: If no new erase strokes were performed and not full clear, do not update or consume cloth!
+    if not SprayState.isFullClear and (not SprayState.strokeHistory or #SprayState.strokeHistory == 0) then
         Peak.Client.Notify(L("eraser_cancelled") or "Cleaning finished (no changes)", "info", Config.NotifyDuration)
         CleanupEraserSession(paintingId, false)
         return
     end
 
-    local doc = SprayState.targetDoc or SprayUtils.NormalizePaintingDocument(SprayState.existingStrokes)
-    doc.eraseMask = doc.eraseMask or {}
-    for _, s in ipairs(SprayState.strokeHistory) do
-        table.insert(doc.eraseMask, s)
-    end
-
-    local totalStrokeCount = SprayUtils.CalculatePaintingStrokeCount(doc)
-
-    local data = {
+    local cleanPayload = {
         paintingId = paintingId,
-        strokeData = doc,
-        strokeCount = totalStrokeCount,
-        consumedCloth = true
+        isFullClean = SprayState.isFullClear == true,
+        eraseStrokes = SprayState.strokeHistory or {}
     }
 
     local ok, result = pcall(function()
-        return Peak.Client.TriggerCallback("peak-sprays:updatePainting", data)
+        return Peak.Client.TriggerCallback("peak-sprays:cleanPainting", cleanPayload)
     end)
 
     if result and result.success then

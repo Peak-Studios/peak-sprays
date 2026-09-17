@@ -1,7 +1,8 @@
-import type { ImageFilters } from '@/types/graffiti'
+import type { ImageFilters } from '../types/graffiti.ts'
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>()
 const processedCache = new Map<string, HTMLCanvasElement>()
+const MAX_IMAGE_ENTRIES = 64
 const MAX_PROCESSED_ENTRIES = 64
 
 export function clearImageCaches() {
@@ -25,6 +26,10 @@ export function loadImage(url: string): Promise<HTMLImageElement> {
     img.src = url
   })
 
+  if (imageCache.size >= MAX_IMAGE_ENTRIES) {
+    const oldestKey = imageCache.keys().next().value
+    if (oldestKey) imageCache.delete(oldestKey)
+  }
   imageCache.set(url, promise)
   return promise
 }

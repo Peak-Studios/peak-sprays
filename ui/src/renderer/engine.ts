@@ -6,28 +6,40 @@ import type {
   StencilLayer,
   TextLayer,
   WorldEraseStroke,
-} from '@/types/graffiti'
-import { drawTexturedStroke, normalizeColor } from './brushes'
-import { drawTextLayer, ensureFontsLoaded } from './text'
-import { getProcessedImageCanvas } from './images'
-import { STENCILS } from './stencils'
+} from '../types/graffiti.ts'
+import { drawTexturedStroke, normalizeColor } from './brushes.ts'
+import { drawTextLayer, ensureFontsLoaded } from './text.ts'
+import { getProcessedImageCanvas } from './images.ts'
+import { STENCILS } from './stencils.ts'
 
-let pooledScratchCanvas: HTMLCanvasElement | null = null
+class ScratchCanvasPool {
+  private pool: HTMLCanvasElement[] = []
+  private maxCapacity = 8
 
-function getScratchCanvas(width: number, height: number): HTMLCanvasElement {
-  if (!pooledScratchCanvas) {
-    pooledScratchCanvas = document.createElement('canvas')
+  acquire(width: number, height: number): HTMLCanvasElement {
+    let canvas = this.pool.pop()
+    if (!canvas) {
+      canvas = document.createElement('canvas')
+    }
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width
+      canvas.height = height
+    }
+    const ctx = canvas.getContext('2d')
+    if (ctx) {
+      ctx.clearRect(0, 0, width, height)
+    }
+    return canvas
   }
-  if (pooledScratchCanvas.width !== width || pooledScratchCanvas.height !== height) {
-    pooledScratchCanvas.width = width
-    pooledScratchCanvas.height = height
+
+  release(canvas: HTMLCanvasElement) {
+    if (this.pool.length < this.maxCapacity) {
+      this.pool.push(canvas)
+    }
   }
-  const sctx = pooledScratchCanvas.getContext('2d')
-  if (sctx) {
-    sctx.clearRect(0, 0, width, height)
-  }
-  return pooledScratchCanvas
 }
+
+const scratchPool = new ScratchCanvasPool()
 
 export interface RenderOptions {
   clear?: boolean
@@ -40,6 +52,10 @@ let activeGenerationToken = 0
 
 export function getNextGenerationToken(): number {
   return ++activeGenerationToken
+}
+
+export function cancelPendingRenders(): void {
+  ++activeGenerationToken
 }
 
 /**
@@ -108,8 +124,8 @@ function applyWorldEraseMask(
 }
 
 /**
- * Renders an entire composition document onto the destination 2D context.
- * Guarantees 100% WYSIWYG matching between editor and in-world DUI.
+ * Renders an entire composition document deterministically into an isolated private working surface,
+ * committing to the destination canvas ONLY if the render generation is still current.
  */
 export async function renderComposition(
   destCtx: CanvasRenderingContext2D,
@@ -121,7 +137,7 @@ export async function renderComposition(
   const width = composition.width || 1024
   const height = composition.height || 1024
 
-  // Pre-load all text fonts
+  // 1. Pre-load all text fonts
   const customFonts: string[] = []
   if (composition.layers) {
     for (const layer of composition.layers) {
@@ -134,71 +150,24 @@ export async function renderComposition(
     await ensureFontsLoaded(customFonts)
   }
 
-  // If a newer generation started while waiting for fonts, abort this pass!
-  if (options.generationToken && options.generationToken < activeGenerationToken) {
+  // Check staleness after font loading async boundary
+  if (token < activeGenerationToken) {
     return false
   }
 
-  if (options.clear !== false) {
-    destCtx.clearRect(0, 0, destCtx.canvas.width, destCtx.canvas.height)
-  }
-
-  destCtx.save()
-  if (options.scale && options.scale !== 1.0) {
-    destCtx.scale(options.scale, options.scale)
-  }
-
-  const scratch = getScratchCanvas(width, height)
-  const scratchCtx = scratch.getContext('2d')
-  if (!scratchCtx) {
-    destCtx.restore()
-    return false
-  }
-
+  // 2. Pre-process any image layers before allocating rendering scratch
+  const imageCanvasMap = new Map<string, HTMLCanvasElement | null>()
   const layers = composition.layers || []
-  for (let l = 0; l < layers.length; l++) {
-    const layer = layers[l]
+
+  for (const layer of layers) {
     if (layer.visible === false) continue
-
-    // Clear scratch surface for this layer
-    scratchCtx.clearRect(0, 0, width, height)
-
-    // Render layer content into scratch surface at full internal opacity
-    const layerSeedKey = `${layer.id}_${l}`
-
-    if (layer.type === 'freehand') {
-      const fh = layer as FreehandLayer
-      if (fh.strokes) {
-        for (let s = 0; s < fh.strokes.length; s++) {
-          const stroke = fh.strokes[s]
-          if (stroke.type === 'erase') {
-            scratchCtx.save()
-            scratchCtx.globalCompositeOperation = 'destination-out'
-            const pts = stroke.points
-            if (pts && pts.length > 0) {
-              scratchCtx.lineWidth = stroke.size || 20
-              scratchCtx.lineCap = 'round'
-              scratchCtx.lineJoin = 'round'
-              scratchCtx.beginPath()
-              scratchCtx.moveTo(pts[0].x, pts[0].y)
-              for (let p = 1; p < pts.length; p++) {
-                scratchCtx.lineTo(pts[p].x, pts[p].y)
-              }
-              scratchCtx.stroke()
-            }
-            scratchCtx.restore()
-          } else {
-            drawTexturedStroke(scratchCtx, stroke, `${layerSeedKey}_s${s}`)
-          }
-        }
-      }
-    } else if (layer.type === 'text') {
-      drawTextLayer(scratchCtx, layer as TextLayer, layerSeedKey)
-    } else if (layer.type === 'stencil') {
-      drawStencilLayer(scratchCtx, layer as StencilLayer)
-    } else if (layer.type === 'image') {
+    if (layer.type === 'image') {
       const imgLayer = layer as ImageLayer
-      const sourceUrl = imgLayer.dataUrl || imgLayer.url
+      const sourceUrl =
+        (imgLayer as any).sourceType === 'raster' && (imgLayer as any).data
+          ? `data:image/${(imgLayer as any).format || 'png'};base64,${(imgLayer as any).data}`
+          : imgLayer.dataUrl || imgLayer.url
+
       if (sourceUrl) {
         const processed = await getProcessedImageCanvas(
           sourceUrl,
@@ -206,35 +175,122 @@ export async function renderComposition(
           imgLayer.width || 256,
           imgLayer.height || 256
         )
-        if (processed) {
-          scratchCtx.save()
-          scratchCtx.translate(imgLayer.x, imgLayer.y)
-          if (imgLayer.rotation) {
-            scratchCtx.rotate((imgLayer.rotation * Math.PI) / 180)
+        // Check staleness after image processing async boundary
+        if (token < activeGenerationToken) {
+          return false
+        }
+        imageCanvasMap.set(layer.id, processed)
+      }
+    }
+  }
+
+  // 3. Render complete frame into private working surface
+  const workingCanvas = scratchPool.acquire(width, height)
+  const workingCtx = workingCanvas.getContext('2d')
+  if (!workingCtx) {
+    scratchPool.release(workingCanvas)
+    return false
+  }
+
+  const layerScratch = scratchPool.acquire(width, height)
+  const layerScratchCtx = layerScratch.getContext('2d')
+  if (!layerScratchCtx) {
+    scratchPool.release(workingCanvas)
+    scratchPool.release(layerScratch)
+    return false
+  }
+
+  try {
+    for (let l = 0; l < layers.length; l++) {
+      const layer = layers[l]
+      if (layer.visible === false) continue
+
+      // Clear scratch for this layer
+      layerScratchCtx.clearRect(0, 0, width, height)
+
+      // STABLE APPEARANCE SEED: Derived purely from layer ID, NOT stack index l!
+      const layerSeedKey = layer.id || `layer_${layer.name || 'unnamed'}`
+
+      if (layer.type === 'freehand') {
+        const fh = layer as FreehandLayer
+        if (fh.strokes) {
+          for (let s = 0; s < fh.strokes.length; s++) {
+            const stroke = fh.strokes[s]
+            if (stroke.type === 'erase') {
+              layerScratchCtx.save()
+              layerScratchCtx.globalCompositeOperation = 'destination-out'
+              const pts = stroke.points
+              if (pts && pts.length > 0) {
+                layerScratchCtx.lineWidth = stroke.size || 20
+                layerScratchCtx.lineCap = 'round'
+                layerScratchCtx.lineJoin = 'round'
+                layerScratchCtx.beginPath()
+                layerScratchCtx.moveTo(pts[0].x, pts[0].y)
+                for (let p = 1; p < pts.length; p++) {
+                  layerScratchCtx.lineTo(pts[p].x, pts[p].y)
+                }
+                layerScratchCtx.stroke()
+              }
+              layerScratchCtx.restore()
+            } else {
+              drawTexturedStroke(layerScratchCtx, stroke, `${layerSeedKey}_s${s}`)
+            }
           }
-          scratchCtx.scale(imgLayer.flipX ? -1 : 1, imgLayer.flipY ? -1 : 1)
-          scratchCtx.drawImage(
+        }
+      } else if (layer.type === 'text') {
+        drawTextLayer(layerScratchCtx, layer as TextLayer, layerSeedKey)
+      } else if (layer.type === 'stencil') {
+        drawStencilLayer(layerScratchCtx, layer as StencilLayer)
+      } else if (layer.type === 'image') {
+        const imgLayer = layer as ImageLayer
+        const processed = imageCanvasMap.get(layer.id)
+        if (processed) {
+          layerScratchCtx.save()
+          layerScratchCtx.translate(imgLayer.x, imgLayer.y)
+          if (imgLayer.rotation) {
+            layerScratchCtx.rotate((imgLayer.rotation * Math.PI) / 180)
+          }
+          layerScratchCtx.scale(imgLayer.flipX ? -1 : 1, imgLayer.flipY ? -1 : 1)
+          layerScratchCtx.drawImage(
             processed,
             -(imgLayer.width || 256) / 2,
             -(imgLayer.height || 256) / 2
           )
-          scratchCtx.restore()
+          layerScratchCtx.restore()
         }
       }
+
+      // Composite layer scratch onto working surface with layer opacity applied once!
+      workingCtx.save()
+      workingCtx.globalAlpha = typeof layer.opacity === 'number' ? layer.opacity : 1.0
+      workingCtx.drawImage(layerScratch, 0, 0)
+      workingCtx.restore()
     }
 
-    // Composite scratch canvas to destination with layer opacity applied once!
+    // Composite independent world-cleaning erase mask over assembled artwork
+    if (composition.eraseMask && composition.eraseMask.length > 0) {
+      applyWorldEraseMask(workingCtx, composition.eraseMask)
+    }
+
+    // 4. Atomic commit: check if generation is still current before touching destCtx
+    if (token < activeGenerationToken) {
+      return false
+    }
+
+    if (options.clear !== false) {
+      destCtx.clearRect(0, 0, destCtx.canvas.width, destCtx.canvas.height)
+    }
+
     destCtx.save()
-    destCtx.globalAlpha = typeof layer.opacity === 'number' ? layer.opacity : 1.0
-    destCtx.drawImage(scratch, 0, 0)
+    if (options.scale && options.scale !== 1.0) {
+      destCtx.scale(options.scale, options.scale)
+    }
+    destCtx.drawImage(workingCanvas, 0, 0)
     destCtx.restore()
-  }
 
-  // Composite independent world-cleaning erase mask over the assembled artwork!
-  if (composition.eraseMask && composition.eraseMask.length > 0) {
-    applyWorldEraseMask(destCtx, composition.eraseMask)
+    return true
+  } finally {
+    scratchPool.release(workingCanvas)
+    scratchPool.release(layerScratch)
   }
-
-  destCtx.restore()
-  return true
 }

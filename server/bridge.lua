@@ -141,6 +141,37 @@ function Peak.Server.RemoveItem(source, item, count)
     return false
 end
 
+--- Adds an item to a player's inventory.
+--- @param source number
+--- @param item string
+--- @param count number
+--- @param metadata table|nil
+--- @return boolean
+function Peak.Server.AddItem(source, item, count, metadata)
+    count = count or 1
+    local fw = Peak.Server.FrameworkName
+    local obj = Peak.Server.FrameworkObject
+
+    if fw == "qbcore" or fw == "qbox" then
+        local player = obj.Functions.GetPlayer(source)
+        if player then
+            return player.Functions.AddItem(item, count, nil, metadata)
+        end
+    elseif fw == "esx" then
+        local player = obj.GetPlayerFromId(source)
+        if player then
+            player.addInventoryItem(item, count)
+            return true
+        end
+    end
+
+    if GetResourceState("ox_inventory") == "started" then
+        return exports.ox_inventory:AddItem(source, item, count, metadata)
+    end
+
+    return false
+end
+
 --- Checks if a player has a certain amount of an item.
 --- @param source number
 --- @param item string
@@ -233,4 +264,5 @@ end
 exports("IsAdmin", function(src) return Peak.Server.IsAdmin(src) end)
 exports("HasItem", function(...) return Peak.Server.HasItem(...) end)
 exports("RemoveItem", function(...) return Peak.Server.RemoveItem(...) end)
+exports("AddItem", function(...) return Peak.Server.AddItem(...) end)
 exports("RegisterUsableItem", function(...) Peak.Server.RegisterUsableItem(...) end)

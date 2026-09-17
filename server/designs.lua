@@ -219,13 +219,29 @@ function Peak.Server.ValidatePaintingComposition(comp)
                 return false, ("Too many image layers (max %d)"):format(maxImages)
             end
 
-            local url = layer.url
-            if type(url) ~= "string" or #url > (Config.ImageUrlMaxLength or 512) then
-                return false, ("Image layer %d URL invalid or too long"):format(i)
-            end
-            local host = ExtractUrlHost(url)
-            if not host or not IsAllowedImageHost(host) then
-                return false, ("Image layer %d host is not permitted"):format(i)
+            local sourceType = layer.sourceType or (layer.data and "raster" or "url")
+            if sourceType == "raster" then
+                local data = layer.data
+                if type(data) ~= "string" or #data == 0 then
+                    return false, ("Image layer %d raster payload is empty"):format(i)
+                end
+                local maxBase64Len = (Config.MaxImageRasterBytes or 262144) * 4 / 3 + 64
+                if #data > maxBase64Len then
+                    return false, ("Image layer %d raster payload exceeds 256KB limit"):format(i)
+                end
+                local format = tostring(layer.format or "png"):lower()
+                if format ~= "png" and format ~= "jpeg" and format ~= "jpg" and format ~= "webp" then
+                    return false, ("Image layer %d has unsupported raster format: %s"):format(i, format)
+                end
+            else
+                local url = layer.url
+                if type(url) ~= "string" or #url > (Config.ImageUrlMaxLength or 512) then
+                    return false, ("Image layer %d URL invalid or too long"):format(i)
+                end
+                local host = ExtractUrlHost(url)
+                if not host or not IsAllowedImageHost(host) then
+                    return false, ("Image layer %d host is not permitted"):format(i)
+                end
             end
         elseif layerType == "freehand" then
             local strokes = layer.strokes

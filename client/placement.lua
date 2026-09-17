@@ -202,6 +202,7 @@ function StartSmartPlacement(composition, presetSize, duplicateMode)
     PlacementState.duplicateMode = duplicateMode == true
     PlacementState.pendingRequest = false
     PlacementState.placedCount = 0
+    SprayState.mode = "placing"
 
     local compW = (composition and composition.width) or 1024
     local compH = (composition and composition.height) or 1024
@@ -307,12 +308,13 @@ function StartSmartPlacement(composition, presetSize, duplicateMode)
                         end
                     end
                 end
+            end
 
-                -- Input: Cancel Placement (RMB or Backspace/Delete)
-                if IsDisabledControlJustPressed(0, 25) or IsDisabledControlJustPressed(0, 177) or IsDisabledControlJustPressed(0, 178) then
-                    CancelPlacement()
-                    return
-                end
+            -- Input: Cancel Placement (RMB or Backspace/Delete)
+            -- Reachable during both PLACING and PAINTING states
+            if IsDisabledControlJustPressed(0, 25) or IsDisabledControlJustPressed(0, 177) or IsDisabledControlJustPressed(0, 178) then
+                CancelPlacement()
+                return
             end
         end
     end)
@@ -350,7 +352,10 @@ function ConfirmPlacement(sessionToken)
         layers = comp.layers or {}
     })
 
+    local requestId = ("req_%d_%d"):format(GetGameTimer(), math.random(100000, 999999))
+
     local payload = {
+        requestId = requestId,
         corners = SprayUtils.CornersToTable(corners),
         normal = SprayUtils.Vec3ToTable(normal),
         strokeData = strokeDoc,
@@ -394,6 +399,8 @@ function ConfirmPlacement(sessionToken)
             else
                 PlacementState.status = PlacementStatus.IDLE
                 PlacementState.sessionToken = nil
+                SprayState.mode = "idle"
+                SetFollowPedCamViewMode(0)
                 Peak.Client.HideTextUI()
             end
         else
@@ -409,15 +416,28 @@ function CancelPlacement()
         return
     end
 
+    local wasDuplicate = PlacementState.duplicateMode
+    local placedCount = PlacementState.placedCount
+
     PlacementState.sessionToken = nil
     PlacementState.pendingRequest = false
-    PlacementState.status = PlacementStatus.STUDIO
+    SprayState.mode = "idle"
 
     StopSprayParticle()
     StopSpraySound()
     DetachProp()
     ClearPedTasks(PlayerPedId())
+    SetFollowPedCamViewMode(0)
     Peak.Client.HideTextUI()
+
+    -- If player was in duplicate mode and already placed sprays, exit cleanly to idle gameplay
+    if wasDuplicate and placedCount > 0 then
+        PlacementState.status = PlacementStatus.IDLE
+        Peak.Client.Notify(("Duplicate placement finished (%d placed)"):format(placedCount), "info", 3000)
+        return
+    end
+
+    PlacementState.status = PlacementStatus.STUDIO
     Peak.Client.Notify("Placement cancelled", "info", 2000)
 
     -- Re-open studio so player doesn't lose their work

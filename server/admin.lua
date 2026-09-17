@@ -57,21 +57,18 @@ Peak.Server.RegisterCallback("peak-sprays:adminDeletePainting", function(source,
     end
     
     local info = Peak.Server.ExecuteSQL("SELECT id, identifier, player_name, world_x, world_y, world_z FROM spray_paintings WHERE id = @id", { ["@id"] = paintingId })
-    
-    local rowsAffected = Peak.Server.UpdateSQL("DELETE FROM spray_paintings WHERE id = @id", { ["@id"] = paintingId })
-    if not rowsAffected or rowsAffected == 0 then
-        return { success = false, message = "Painting not found or already deleted" }
-    end
-    
-    TriggerClientEvent("peak-sprays:cl:removePainting", -1, paintingId)
-    
-    local adminName = Peak.Server.GetPlayerName(source)
-    local adminIdentifier = Peak.Server.GetIdentifier(source)
     local creatorName = info and info[1] and info[1].player_name or "Unknown"
-    
-    LogAdminDelete(source, adminName, adminIdentifier, paintingId, creatorName)
-    SprayUtils.DebugPrint("Admin", adminName, "deleted painting:", paintingId)
-    
+
+    local ok, err = Peak.Server.MutatePainting("delete", paintingId, nil, {
+        source = source,
+        admin = true,
+        creatorName = creatorName
+    })
+
+    if not ok then
+        return { success = false, message = err or "Painting not found or already deleted" }
+    end
+
     return { success = true }
 end)
 

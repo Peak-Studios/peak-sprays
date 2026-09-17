@@ -1,5 +1,5 @@
-import type { FreehandStroke, StrokePoint } from '@/types/graffiti'
-import { createSeededRandom } from './random'
+import type { FreehandStroke, StrokePoint } from '../types/graffiti.ts'
+import { createSeededRandom } from './random.ts'
 
 export function normalizeColor(color?: string, fallback = '#000000'): string {
   if (!color || typeof color !== 'string') return fallback
@@ -31,6 +31,22 @@ export function drawTexturedStroke(
 ): void {
   const points = stroke.points
   if (!points || points.length === 0) return
+
+  if (stroke.type === 'erase') {
+    ctx.save()
+    ctx.globalCompositeOperation = 'destination-out'
+    ctx.lineWidth = Math.max(1, stroke.size || 14)
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.beginPath()
+    ctx.moveTo(points[0].x, points[0].y)
+    for (let i = 1; i < points.length; i++) {
+      ctx.lineTo(points[i].x, points[i].y)
+    }
+    ctx.stroke()
+    ctx.restore()
+    return
+  }
 
   const style = stroke.style || 'spray'
   const size = Math.max(1, stroke.size || 14)
@@ -274,6 +290,58 @@ export function drawTexturedStroke(
           ctx.lineTo(pt.x, pt.y + dripLen)
           ctx.stroke()
         }
+      }
+      break
+    }
+
+    case 'stipple': {
+      // Fine dot matrix scatter
+      for (let i = 0; i < points.length; i++) {
+        const pt = points[i]
+        const radius = size * 1.2
+        const dots = Math.floor(15 + rng() * 20)
+        for (let d = 0; d < dots; d++) {
+          const angle = rng() * Math.PI * 2
+          const dist = Math.sqrt(rng()) * radius
+          const px = pt.x + Math.cos(angle) * dist
+          const py = pt.y + Math.sin(angle) * dist
+          const dotRadius = 0.6 + rng() * 1.0
+          ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${(0.4 + rng() * 0.5).toFixed(3)})`
+          ctx.beginPath()
+          ctx.arc(px, py, dotRadius, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      }
+      break
+    }
+
+    case 'scratched': {
+      // Multiple parallel jittery groove lines with gaps
+      const scratchLines = 4
+      for (let s = 0; s < scratchLines; s++) {
+        const offset = (s - (scratchLines - 1) / 2) * (size / scratchLines) * 1.2
+        ctx.strokeStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.85)`
+        ctx.lineWidth = Math.max(1, size * 0.15)
+        ctx.lineCap = 'butt'
+        ctx.beginPath()
+        let drawing = false
+        for (let i = 0; i < points.length; i++) {
+          if (rng() > 0.15) {
+            const jx = (rng() - 0.5) * 2
+            const jy = (rng() - 0.5) * 2
+            const px = points[i].x + offset + jx
+            const py = points[i].y + jy
+            if (!drawing) {
+              ctx.moveTo(px, py)
+              drawing = true
+            } else {
+              ctx.lineTo(px, py)
+            }
+          } else {
+            drawing = false
+          }
+        }
+        ctx.stroke()
       }
       break
     }

@@ -16,6 +16,7 @@ import {
   deleteLayer,
   updateLayerProperty,
   executeTransaction,
+  mutateLayer,
   undoStudio,
   redoStudio,
   openDesign,
@@ -28,6 +29,7 @@ import type {
   BrushStyleId,
   TextLayer,
   ImageLayer,
+  ImageFilters,
   StencilLayer,
   FreehandLayer,
   FreehandStroke,
@@ -857,6 +859,17 @@ function executeImportJson() {
 }
 
 function confirmImageImport() {
+  let rasterPayload: { format?: string; data?: string } | undefined
+  if (studioState.imageModal.dataUrl && studioState.imageModal.dataUrl.startsWith('data:image/')) {
+    const match = studioState.imageModal.dataUrl.match(/^data:image\/([a-zA-Z0-9\+]+);base64,(.+)$/)
+    if (match) {
+      rasterPayload = {
+        format: match[1] === 'jpeg' ? 'jpeg' : match[1] === 'webp' ? 'webp' : 'png',
+        data: match[2],
+      }
+    }
+  }
+
   addImageLayer(
     studioState.imageModal.url,
     studioState.imageModal.dataUrl,
@@ -867,11 +880,106 @@ function confirmImageImport() {
       blur: studioState.imageModal.blur,
       removeBg: studioState.imageModal.removeBg,
       removeBgThreshold: studioState.imageModal.removeBgThreshold,
-    }
+    },
+    rasterPayload
   )
   studioState.imageModal.visible = false
   studioState.imageModal.url = ''
   studioState.imageModal.dataUrl = ''
+  triggerRender()
+}
+
+// ─── Transactional Inspector Helpers ───────────────────────────────────
+
+function onInspectorTextChange(e: Event) {
+  const val = (e.target as HTMLTextAreaElement).value
+  if (!activeLayer.value || activeLayer.value.type !== 'text') return
+  mutateLayer<TextLayer>(activeLayer.value.id, 'Change text content', (l) => {
+    l.text = val
+  })
+  triggerRender()
+}
+
+function onInspectorFontChange(e: Event) {
+  const val = (e.target as HTMLSelectElement).value
+  if (!activeLayer.value || activeLayer.value.type !== 'text') return
+  mutateLayer<TextLayer>(activeLayer.value.id, `Change font to ${val}`, (l) => {
+    l.font = val
+  })
+  triggerRender()
+}
+
+function onInspectorFontSizeChange(val: number) {
+  if (!activeLayer.value || activeLayer.value.type !== 'text') return
+  mutateLayer<TextLayer>(activeLayer.value.id, `Change font size to ${val}`, (l) => {
+    l.fontSize = val
+  })
+  triggerRender()
+}
+
+function onInspectorTextColorChange(color: string) {
+  if (!activeLayer.value || activeLayer.value.type !== 'text') return
+  mutateLayer<TextLayer>(activeLayer.value.id, `Change text color to ${color}`, (l) => {
+    l.color = color
+  })
+  triggerRender()
+}
+
+function onInspectorTextEffectToggle(effectKey: 'outline' | 'shadow' | 'glow' | 'drip' | 'spray' | 'distress', enabled: boolean) {
+  if (!activeLayer.value || activeLayer.value.type !== 'text') return
+  mutateLayer<TextLayer>(activeLayer.value.id, `Toggle ${effectKey}`, (l) => {
+    if (l[effectKey]) l[effectKey].enabled = enabled
+  })
+  triggerRender()
+}
+
+function onInspectorTextEffectVal(effectKey: 'outline' | 'shadow' | 'glow' | 'drip' | 'spray' | 'distress', propKey: string, val: any) {
+  if (!activeLayer.value || activeLayer.value.type !== 'text') return
+  mutateLayer<TextLayer>(activeLayer.value.id, `Change ${effectKey} ${propKey}`, (l) => {
+    if ((l as any)[effectKey]) (l as any)[effectKey][propKey] = val
+  })
+  triggerRender()
+}
+
+function onInspectorImageScale(val: number) {
+  if (!activeLayer.value || activeLayer.value.type !== 'image') return
+  mutateLayer<ImageLayer>(activeLayer.value.id, `Scale image to ${val}px`, (l) => {
+    l.width = val
+    l.height = val
+  })
+  triggerRender()
+}
+
+function onInspectorImageRotation(val: number) {
+  if (!activeLayer.value || activeLayer.value.type !== 'image') return
+  mutateLayer<ImageLayer>(activeLayer.value.id, `Rotate image to ${val}°`, (l) => {
+    l.rotation = val
+  })
+  triggerRender()
+}
+
+function onInspectorImageFlip(axis: 'flipX' | 'flipY') {
+  if (!activeLayer.value || activeLayer.value.type !== 'image') return
+  mutateLayer<ImageLayer>(activeLayer.value.id, `Flip image ${axis === 'flipX' ? 'horizontally' : 'vertically'}`, (l) => {
+    l[axis] = !l[axis]
+  })
+  triggerRender()
+}
+
+function onInspectorImageFilter(filterKey: keyof ImageFilters, val: any) {
+  if (!activeLayer.value || activeLayer.value.type !== 'image') return
+  mutateLayer<ImageLayer>(activeLayer.value.id, `Change filter ${String(filterKey)}`, (l) => {
+    ;(l.filters as any)[filterKey] = val
+  })
+  triggerRender()
+}
+
+function onInspectorStencil(stencilKey: string) {
+  if (!activeLayer.value || activeLayer.value.type !== 'stencil') return
+  mutateLayer<StencilLayer>(activeLayer.value.id, `Set stencil to ${stencilKey}`, (l) => {
+    l.stencilId = stencilKey
+  })
+  triggerRender()
 }
 
 // ─── Lifecycle & Listeners ─────────────────────────────────────────────
@@ -1494,7 +1602,9 @@ onUnmounted(() => {
               <div>
                 <label class="block text-neutral-400 font-bold mb-1">Text Content</label>
                 <textarea
-                  v-model="(activeLayer as TextLayer).text"
+                  :value="(activeLayer as TextLayer).text"
+                  @input="(e: any) => { (activeLayer as TextLayer).text = e.target.value; triggerRender() }"
+                  @change="onInspectorTextChange"
                   rows="2"
                   class="w-full bg-neutral-900 border border-white/10 rounded-lg p-2.5 text-white font-bold focus:border-[#D6FF62] outline-none"
                 />
@@ -1504,7 +1614,8 @@ onUnmounted(() => {
                 <div>
                   <label class="block text-neutral-400 font-bold mb-1">Font Family</label>
                   <select
-                    v-model="(activeLayer as TextLayer).font"
+                    :value="(activeLayer as TextLayer).font"
+                    @change="onInspectorFontChange"
                     class="w-full bg-neutral-900 border border-white/10 rounded-lg p-2 text-white outline-none"
                   >
                     <option v-for="font in FONTS" :key="font" :value="font">{{ font }}</option>
@@ -1513,7 +1624,9 @@ onUnmounted(() => {
                 <div>
                   <label class="block text-neutral-400 font-bold mb-1">Font Size</label>
                   <input
-                    v-model.number="(activeLayer as TextLayer).fontSize"
+                    :value="(activeLayer as TextLayer).fontSize"
+                    @input="(e: any) => { (activeLayer as TextLayer).fontSize = Number(e.target.value); triggerRender() }"
+                    @change="(e: any) => onInspectorFontSizeChange(Number(e.target.value))"
                     type="number"
                     min="16"
                     max="200"
@@ -1529,12 +1642,14 @@ onUnmounted(() => {
                   <button
                     v-for="color in COLOR_PRESETS"
                     :key="color"
-                    @click="(activeLayer as TextLayer).color = color"
+                    @click="onInspectorTextColorChange(color)"
                     class="w-6 h-6 rounded-md border border-white/10 hover:scale-110 transition-all"
                     :style="{ backgroundColor: color }"
                   />
                   <input
-                    v-model="(activeLayer as TextLayer).color"
+                    :value="(activeLayer as TextLayer).color"
+                    @input="(e: any) => { (activeLayer as TextLayer).color = e.target.value; triggerRender() }"
+                    @change="(e: any) => onInspectorTextColorChange(e.target.value)"
                     type="color"
                     class="w-6 h-6 rounded cursor-pointer border-0 bg-transparent"
                   />
@@ -1549,7 +1664,11 @@ onUnmounted(() => {
                 <div class="bg-neutral-900/60 p-2.5 rounded-xl border border-white/5 space-y-2">
                   <div class="flex items-center justify-between">
                     <span class="font-bold">Paint Drips</span>
-                    <input type="checkbox" v-model="(activeLayer as TextLayer).drip.enabled" />
+                    <input
+                      type="checkbox"
+                      :checked="(activeLayer as TextLayer).drip.enabled"
+                      @change="(e: any) => onInspectorTextEffectToggle('drip', e.target.checked)"
+                    />
                   </div>
                   <div v-if="(activeLayer as TextLayer).drip.enabled" class="space-y-1.5">
                     <div class="flex justify-between text-[11px] text-neutral-400">
@@ -1559,7 +1678,9 @@ onUnmounted(() => {
                       type="range"
                       min="10"
                       max="120"
-                      v-model.number="(activeLayer as TextLayer).drip.length"
+                      :value="(activeLayer as TextLayer).drip.length"
+                      @input="(e: any) => { (activeLayer as TextLayer).drip.length = Number(e.target.value); triggerRender() }"
+                      @change="(e: any) => onInspectorTextEffectVal('drip', 'length', Number(e.target.value))"
                       class="w-full"
                     />
                   </div>
@@ -1569,14 +1690,20 @@ onUnmounted(() => {
                 <div class="bg-neutral-900/60 p-2.5 rounded-xl border border-white/5 space-y-2">
                   <div class="flex items-center justify-between">
                     <span class="font-bold">Neon Glow</span>
-                    <input type="checkbox" v-model="(activeLayer as TextLayer).glow.enabled" />
+                    <input
+                      type="checkbox"
+                      :checked="(activeLayer as TextLayer).glow.enabled"
+                      @change="(e: any) => onInspectorTextEffectToggle('glow', e.target.checked)"
+                    />
                   </div>
                   <div v-if="(activeLayer as TextLayer).glow.enabled" class="space-y-1.5">
                     <input
                       type="range"
                       min="2"
                       max="40"
-                      v-model.number="(activeLayer as TextLayer).glow.blur"
+                      :value="(activeLayer as TextLayer).glow.blur"
+                      @input="(e: any) => { (activeLayer as TextLayer).glow.blur = Number(e.target.value); triggerRender() }"
+                      @change="(e: any) => onInspectorTextEffectVal('glow', 'blur', Number(e.target.value))"
                       class="w-full"
                     />
                   </div>
@@ -1586,14 +1713,20 @@ onUnmounted(() => {
                 <div class="bg-neutral-900/60 p-2.5 rounded-xl border border-white/5 space-y-2">
                   <div class="flex items-center justify-between">
                     <span class="font-bold">Chisel Outline</span>
-                    <input type="checkbox" v-model="(activeLayer as TextLayer).outline.enabled" />
+                    <input
+                      type="checkbox"
+                      :checked="(activeLayer as TextLayer).outline.enabled"
+                      @change="(e: any) => onInspectorTextEffectToggle('outline', e.target.checked)"
+                    />
                   </div>
                   <div v-if="(activeLayer as TextLayer).outline.enabled" class="space-y-1.5">
                     <input
                       type="range"
                       min="1"
                       max="16"
-                      v-model.number="(activeLayer as TextLayer).outline.width"
+                      :value="(activeLayer as TextLayer).outline.width"
+                      @input="(e: any) => { (activeLayer as TextLayer).outline.width = Number(e.target.value); triggerRender() }"
+                      @change="(e: any) => onInspectorTextEffectVal('outline', 'width', Number(e.target.value))"
                       class="w-full"
                     />
                   </div>
@@ -1603,7 +1736,11 @@ onUnmounted(() => {
                 <div class="bg-neutral-900/60 p-2.5 rounded-xl border border-white/5 space-y-2">
                   <div class="flex items-center justify-between">
                     <span class="font-bold">Weathering / Distress</span>
-                    <input type="checkbox" v-model="(activeLayer as TextLayer).distress.enabled" />
+                    <input
+                      type="checkbox"
+                      :checked="(activeLayer as TextLayer).distress.enabled"
+                      @change="(e: any) => onInspectorTextEffectToggle('distress', e.target.checked)"
+                    />
                   </div>
                   <div v-if="(activeLayer as TextLayer).distress.enabled" class="space-y-1.5">
                     <input
@@ -1611,7 +1748,9 @@ onUnmounted(() => {
                       min="0.1"
                       max="0.8"
                       step="0.05"
-                      v-model.number="(activeLayer as TextLayer).distress.roughness"
+                      :value="(activeLayer as TextLayer).distress.roughness"
+                      @input="(e: any) => { (activeLayer as TextLayer).distress.roughness = Number(e.target.value); triggerRender() }"
+                      @change="(e: any) => onInspectorTextEffectVal('distress', 'roughness', Number(e.target.value))"
                       class="w-full"
                     />
                   </div>
@@ -1629,8 +1768,9 @@ onUnmounted(() => {
                     type="range"
                     min="80"
                     max="800"
-                    v-model.number="(activeLayer as ImageLayer).width"
-                    @input="(activeLayer as ImageLayer).height = (activeLayer as ImageLayer).width"
+                    :value="(activeLayer as ImageLayer).width"
+                    @input="(e: any) => { (activeLayer as ImageLayer).width = Number(e.target.value); (activeLayer as ImageLayer).height = Number(e.target.value); triggerRender() }"
+                    @change="(e: any) => onInspectorImageScale(Number(e.target.value))"
                     class="w-full"
                   />
                 </div>
@@ -1640,19 +1780,21 @@ onUnmounted(() => {
                     type="range"
                     min="-180"
                     max="180"
-                    v-model.number="(activeLayer as ImageLayer).rotation"
+                    :value="(activeLayer as ImageLayer).rotation"
+                    @input="(e: any) => { (activeLayer as ImageLayer).rotation = Number(e.target.value); triggerRender() }"
+                    @change="(e: any) => onInspectorImageRotation(Number(e.target.value))"
                     class="w-full"
                   />
                 </div>
                 <div class="flex items-center gap-3">
                   <button
-                    @click="(activeLayer as ImageLayer).flipX = !(activeLayer as ImageLayer).flipX"
+                    @click="onInspectorImageFlip('flipX')"
                     class="flex-1 py-1.5 bg-white/10 rounded font-bold"
                   >
                     Flip H
                   </button>
                   <button
-                    @click="(activeLayer as ImageLayer).flipY = !(activeLayer as ImageLayer).flipY"
+                    @click="onInspectorImageFlip('flipY')"
                     class="flex-1 py-1.5 bg-white/10 rounded font-bold"
                   >
                     Flip V
@@ -1661,11 +1803,19 @@ onUnmounted(() => {
                 <div class="border-t border-white/10 pt-3 space-y-2">
                   <div class="flex items-center justify-between">
                     <span class="font-bold">Monochrome B&W</span>
-                    <input type="checkbox" v-model="(activeLayer as ImageLayer).filters.monochrome" />
+                    <input
+                      type="checkbox"
+                      :checked="(activeLayer as ImageLayer).filters.monochrome"
+                      @change="(e: any) => onInspectorImageFilter('monochrome', e.target.checked)"
+                    />
                   </div>
                   <div class="flex items-center justify-between">
                     <span class="font-bold">Auto Background Removal</span>
-                    <input type="checkbox" v-model="(activeLayer as ImageLayer).filters.removeBg" />
+                    <input
+                      type="checkbox"
+                      :checked="(activeLayer as ImageLayer).filters.removeBg"
+                      @change="(e: any) => onInspectorImageFilter('removeBg', e.target.checked)"
+                    />
                   </div>
                 </div>
               </div>
@@ -1678,7 +1828,7 @@ onUnmounted(() => {
                 <button
                   v-for="(_, stKey) in STENCILS"
                   :key="stKey"
-                  @click="(activeLayer as StencilLayer).stencilId = stKey"
+                  @click="onInspectorStencil(stKey)"
                   :class="[
                     'p-2 rounded-lg border text-center font-bold text-xs',
                     (activeLayer as StencilLayer).stencilId === stKey

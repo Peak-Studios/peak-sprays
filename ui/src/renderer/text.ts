@@ -1,6 +1,6 @@
-import type { TextLayer } from '@/types/graffiti'
-import { createSeededRandom } from './random'
-import { normalizeColor } from './brushes'
+import type { TextLayer } from '../types/graffiti.ts'
+import { createSeededRandom } from './random.ts'
+import { normalizeColor } from './brushes.ts'
 
 /**
  * Ensures all custom fonts referenced in the document are loaded before drawing.

@@ -664,9 +664,9 @@ export function renderTextLayer(ctx: CanvasRenderingContext2D, layer: TextLayer)
 // ─── Image Layer Rendering with Filters & BG Removal ───────────────────
 
 export async function renderImageLayer(ctx: CanvasRenderingContext2D, layer: ImageLayer) {
-  if (!layer.url && !layer.dataUrl) return
-
   const src = layer.dataUrl || layer.url
+  if (!src) return
+
   let img: HTMLImageElement
   try {
     img = await loadCanvasImage(src)

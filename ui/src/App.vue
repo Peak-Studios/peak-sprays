@@ -52,6 +52,23 @@ function startSpraySound() {
   } catch (_) { /* ignore */ }
 }
 
+// ─── Debounced & Monotonic Library Refresh ────────────────────────────
+let libraryRequestSeq = 0
+let refreshDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+function debouncedRefreshLibrary() {
+  if (refreshDebounceTimer) clearTimeout(refreshDebounceTimer)
+  refreshDebounceTimer = setTimeout(() => {
+    const seq = ++libraryRequestSeq
+    fetchNui('getDesignsLibrary').then((lib) => {
+      if (seq === libraryRequestSeq && lib) {
+        studioState.library = lib
+        if (lib.playerIdentifier) studioState.playerIdentifier = lib.playerIdentifier
+      }
+    })
+  }, 100)
+}
+
 // ─── NUI message handler ──────────────────────────────────────────────
 function onMessage(event: MessageEvent) {
   const a = event.data
@@ -154,12 +171,7 @@ function onMessage(event: MessageEvent) {
       break
 
     case 'refreshDesignsLibrary':
-      fetchNui('getDesignsLibrary').then((lib) => {
-        if (lib) {
-          studioState.library = lib
-          if (lib.playerIdentifier) studioState.playerIdentifier = lib.playerIdentifier
-        }
-      })
+      debouncedRefreshLibrary()
       break
 
     case 'startSpraySound':

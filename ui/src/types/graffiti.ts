@@ -123,9 +123,25 @@ export interface TextLayer extends BaseLayer {
   distress: TextDistressEffect
 }
 
+export type UrlImageSource = {
+  sourceType: 'url'
+  url: string
+}
+
+export type RasterImageSource = {
+  sourceType: 'raster'
+  format: 'png' | 'jpeg' | 'webp' | string
+  data: string
+}
+
+export type ImageSource = UrlImageSource | RasterImageSource
+
 export interface ImageLayer extends BaseLayer {
   type: 'image'
-  url: string
+  sourceType?: 'url' | 'raster'
+  url?: string
+  format?: 'png' | 'jpeg' | 'webp' | string
+  data?: string
   dataUrl?: string
   x: number
   y: number

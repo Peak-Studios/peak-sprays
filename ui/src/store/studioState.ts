@@ -461,6 +461,34 @@ export function updateLayerProperty(id: string, key: string, value: any): boolea
   })
 }
 
+export function mutateLayer<T extends GraffitiLayer = GraffitiLayer>(
+  id: string,
+  description: string,
+  mutator: (layer: T) => void
+): boolean {
+  const layer = studioState.composition.layers.find((l) => l.id === id)
+  if (!layer || layer.locked) return false
+
+  const snapshotBefore = JSON.parse(JSON.stringify(layer))
+
+  return executeTransaction({
+    description,
+    estimatedBytes: 256,
+    apply: () => {
+      const target = studioState.composition.layers.find((l) => l.id === id)
+      if (!target || target.locked) return false
+      mutator(target as T)
+      return true
+    },
+    undo: () => {
+      const idx = studioState.composition.layers.findIndex((l) => l.id === id)
+      if (idx !== -1) {
+        studioState.composition.layers[idx] = JSON.parse(JSON.stringify(snapshotBefore))
+      }
+    },
+  })
+}
+
 export function addFreehandStroke(layerId: string, stroke: FreehandStroke): boolean {
   const layer = studioState.composition.layers.find((l) => l.id === layerId)
   if (!layer || layer.type !== 'freehand' || layer.locked) return false
@@ -530,8 +558,26 @@ export function addFreehandLayer(name = 'Freehand Spray', brushStyle: BrushStyle
   studioState.activeTool = 'brush'
 }
 
-export function addImageLayer(url: string, dataUrl?: string, filters?: Partial<ImageFilters>) {
+export function addImageLayer(
+  url: string,
+  dataUrl?: string,
+  filters?: Partial<ImageFilters>,
+  rasterPayload?: { format?: string; data?: string }
+) {
   const newId = 'img_' + Math.random().toString(36).substring(2, 9)
+  let isRaster = Boolean(rasterPayload && rasterPayload.data) || (!url && Boolean(dataUrl))
+  let format = rasterPayload?.format || 'png'
+  let data = rasterPayload?.data
+
+  if (!data && dataUrl && dataUrl.startsWith('data:image/')) {
+    const match = dataUrl.match(/^data:image\/([a-zA-Z0-9\+]+);base64,(.+)$/)
+    if (match) {
+      isRaster = true
+      format = match[1] === 'jpeg' ? 'jpeg' : match[1] === 'webp' ? 'webp' : 'png'
+      data = match[2]
+    }
+  }
+
   const layer: ImageLayer = {
     id: newId,
     name: 'Imported Image',
@@ -539,7 +585,10 @@ export function addImageLayer(url: string, dataUrl?: string, filters?: Partial<I
     visible: true,
     locked: false,
     opacity: 1.0,
-    url,
+    sourceType: isRaster ? 'raster' : 'url',
+    url: isRaster ? '' : url,
+    format: isRaster ? format : undefined,
+    data: isRaster ? data : undefined,
     dataUrl,
     x: 512,
     y: 512,
