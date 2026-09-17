@@ -319,3 +319,81 @@ function SprayUtils.DecodeExportCode(code)
     if not ok or not data or not data.strokes then return nil end
     return data.strokes, data.width, data.height
 end
+
+--- Normalizes any painting representation (legacy stroke array, v0.3.0 composition wrapper, or v1.0 document)
+--- into a standardized versioned document with independent eraseMask.
+--- @param raw table|nil
+--- @return table Normalized painting document
+function SprayUtils.NormalizePaintingDocument(raw)
+    if type(raw) ~= "table" then
+        return {
+            version = "1.0.0",
+            documentType = "layered",
+            composition = {
+                version = "1.0.0",
+                title = "Spray",
+                width = 1024,
+                height = 1024,
+                background = "transparent",
+                layers = {}
+            },
+            eraseMask = {}
+        }
+    end
+
+    -- Case 1: Legacy stroke array (numeric indices, elements have stroke type)
+    if raw[1] ~= nil and type(raw[1]) == "table" and raw[1].type ~= nil and raw.isComposition == nil and raw.composition == nil then
+        return {
+            version = "1.0.0",
+            documentType = "legacy",
+            strokes = raw,
+            eraseMask = {}
+        }
+    end
+
+    -- Case 2: v0.3.0 composition wrapper
+    if raw.isComposition == true or raw.composition ~= nil then
+        local comp = raw.composition or raw
+        local eraseMask = (type(raw.eraseMask) == "table") and raw.eraseMask or {}
+        return {
+            version = "1.0.0",
+            documentType = "layered",
+            composition = comp,
+            eraseMask = eraseMask
+        }
+    end
+
+    -- Case 3: Already normalized document
+    if raw.documentType == "layered" or raw.documentType == "legacy" then
+        return {
+            version = raw.version or "1.0.0",
+            documentType = raw.documentType,
+            composition = raw.composition,
+            strokes = raw.strokes,
+            eraseMask = (type(raw.eraseMask) == "table") and raw.eraseMask or {}
+        }
+    end
+
+    -- Fallback safe normalization
+    return {
+        version = "1.0.0",
+        documentType = "layered",
+        composition = raw,
+        eraseMask = {}
+    }
+end
+
+--- Calculates an accurate stroke/element count for the document
+function SprayUtils.CalculatePaintingStrokeCount(doc)
+    if type(doc) ~= "table" then return 0 end
+    if doc.documentType == "legacy" and doc.strokes then
+        return #doc.strokes + (doc.eraseMask and #doc.eraseMask or 0)
+    end
+    if doc.composition and doc.composition.layers then
+        return #doc.composition.layers + (doc.eraseMask and #doc.eraseMask or 0)
+    end
+    if type(doc) == "table" and #doc > 0 then
+        return #doc
+    end
+    return 1
+end

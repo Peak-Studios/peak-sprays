@@ -2,7 +2,9 @@ import { reactive, ref } from 'vue'
 import type {
   BrushStyleId,
   DesignLibrary,
+  DesignRecord,
   FreehandLayer,
+  FreehandStroke,
   GraffitiComposition,
   GraffitiLayer,
   ImageFilters,
@@ -13,15 +15,13 @@ import type {
 
 export const showStudio = ref(false)
 
-function createDefaultComposition(): GraffitiComposition {
+export function createDefaultComposition(title = 'New Tag'): GraffitiComposition {
   return {
     version: '1.0.0',
-    title: 'New Tag',
+    title,
     width: 1024,
     height: 1024,
     background: 'transparent',
-    category: 'saved',
-    variant: 'default',
     layers: [
       {
         id: 'layer_' + Math.random().toString(36).substring(2, 9),
@@ -37,6 +37,16 @@ function createDefaultComposition(): GraffitiComposition {
   }
 }
 
+export interface StudioTransaction {
+  description: string
+  apply: () => boolean
+  undo: () => void
+  estimatedBytes?: number
+}
+
+const MAX_TRANSACTIONS = 50
+const MAX_HISTORY_BYTES = 20 * 1024 * 1024 // 20 MB memory budget
+
 export const studioState = reactive({
   activeStep: 'studio' as 'library' | 'studio' | 'preview' | 'placement',
   activeTool: 'brush' as 'select' | 'brush' | 'text' | 'image' | 'stencil',
@@ -44,6 +54,21 @@ export const studioState = reactive({
 
   composition: createDefaultComposition(),
   activeLayerId: null as string | null,
+
+  // Persistence and Ownership Separation
+  activeRecordId: null as number | null,
+  activeRecordMetadata: null as {
+    id: number | null
+    identifier?: string
+    category: 'draft' | 'saved' | 'template' | 'gang'
+    variant: string
+    isOwner: boolean
+    isServerTemplate: boolean
+    forkedFromId?: number
+    forkedFromTitle?: string
+  } | null,
+  playerIdentifier: '' as string,
+  isDirty: false,
 
   brush: {
     style: 'spray' as BrushStyleId,
@@ -69,6 +94,7 @@ export const studioState = reactive({
     templates: [],
     gang: [],
     playerGang: undefined,
+    playerIdentifier: '',
   } as DesignLibrary,
 
   activeLibraryTab: 'saved' as 'saved' | 'drafts' | 'templates' | 'gang' | 'recent',
@@ -107,58 +133,163 @@ export const studioState = reactive({
     duplicateMode: false,
   },
 
-  history: [] as string[],
-  redoStack: [] as string[],
+  undoStack: [] as StudioTransaction[],
+  redoStack: [] as StudioTransaction[],
+  historyBytes: 0,
+  batchSnapshot: null as { layerId: string; description: string; beforeData: any } | null,
 })
 
-// ─── Composition & Layer Actions ───────────────────────────────────────
+// ─── Transactional Undo / Redo Mechanism ─────────────────────────────
 
-export function pushStudioHistory() {
-  const jsonStr = JSON.stringify(studioState.composition)
-  studioState.history.push(jsonStr)
-  if (studioState.history.length > 30) studioState.history.shift()
-  studioState.redoStack = []
+export function executeTransaction(transaction: StudioTransaction): boolean {
+  const success = transaction.apply()
+  if (success === false) return false
+
+  studioState.undoStack.push(transaction)
+  studioState.redoStack = [] // Clear redo on new action
+  studioState.isDirty = true
+
+  const bytes = transaction.estimatedBytes || 256
+  studioState.historyBytes += bytes
+
+  // Bound by count
+  if (studioState.undoStack.length > MAX_TRANSACTIONS) {
+    const dropped = studioState.undoStack.shift()
+    studioState.historyBytes -= dropped?.estimatedBytes || 256
+  }
+
+  // Bound by memory
+  while (studioState.historyBytes > MAX_HISTORY_BYTES && studioState.undoStack.length > 1) {
+    const dropped = studioState.undoStack.shift()
+    studioState.historyBytes -= dropped?.estimatedBytes || 256
+  }
+
+  return true
 }
 
-export function undoStudio() {
-  if (studioState.history.length <= 1) return
-  const current = studioState.history.pop()
-  if (current) studioState.redoStack.push(current)
-  const prev = studioState.history[studioState.history.length - 1]
-  if (prev) {
-    studioState.composition = JSON.parse(prev)
-    if (studioState.composition.layers.length > 0) {
-      studioState.activeLayerId = studioState.composition.layers[0].id
+export function undoStudio(): boolean {
+  if (studioState.undoStack.length === 0) return false
+  const action = studioState.undoStack.pop()!
+  action.undo()
+  studioState.redoStack.push(action)
+  return true
+}
+
+export function redoStudio(): boolean {
+  if (studioState.redoStack.length === 0) return false
+  const action = studioState.redoStack.pop()!
+  action.apply()
+  studioState.undoStack.push(action)
+  return true
+}
+
+export function resetStudioHistory() {
+  studioState.undoStack = []
+  studioState.redoStack = []
+  studioState.historyBytes = 0
+  studioState.batchSnapshot = null
+}
+
+// ─── Document Loading & Normalization Boundary ───────────────────────
+
+export function normalizeCompositionData(raw: any): GraffitiComposition {
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('Composition payload is missing or not an object')
+  }
+
+  const width = typeof raw.width === 'number' && raw.width >= 256 && raw.width <= 2048 ? raw.width : 1024
+  const height = typeof raw.height === 'number' && raw.height >= 256 && raw.height <= 2048 ? raw.height : 1024
+  const title = typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim() : 'Untitled Tag'
+  const background = typeof raw.background === 'string' ? raw.background : 'transparent'
+  const layers = Array.isArray(raw.layers) ? JSON.parse(JSON.stringify(raw.layers)) : []
+
+  return {
+    version: raw.version || '1.0.0',
+    title,
+    width,
+    height,
+    background,
+    layers,
+    eraseMask: Array.isArray(raw.eraseMask) ? raw.eraseMask : [],
+  }
+}
+
+/**
+ * Validates and normalizes an incoming record before replacing current work.
+ * Handles owned update preservation vs fork-on-open.
+ */
+export function openDesign(
+  record: DesignRecord | any,
+  options: { allowTemplateEdit?: boolean } = {}
+): { success: boolean; message?: string } {
+  if (!record || typeof record !== 'object') {
+    return { success: false, message: 'Invalid design record structure' }
+  }
+
+  // Extract nested composition or root layers
+  const compSource = record.composition || (record.layers ? record : null)
+  if (!compSource) {
+    return { success: false, message: 'Design record does not contain artwork composition' }
+  }
+
+  let normalized: GraffitiComposition
+  try {
+    normalized = normalizeCompositionData(compSource)
+  } catch (err: any) {
+    // Current open document remains 100% intact!
+    return { success: false, message: `Corrupted artwork data: ${err.message}` }
+  }
+
+  // Determine ownership & forking
+  const isServerTemplate = record.isServerTemplate === true || record.category === 'template'
+  const currentPid = studioState.playerIdentifier || studioState.library.playerIdentifier || ''
+  const isOwner = Boolean(currentPid && record.identifier && record.identifier === currentPid && !isServerTemplate)
+  const canEditTemplate = options.allowTemplateEdit && isServerTemplate
+
+  if (isOwner || canEditTemplate) {
+    // Preserve update identity
+    studioState.activeRecordId = typeof record.id === 'number' ? record.id : null
+    studioState.activeRecordMetadata = {
+      id: studioState.activeRecordId,
+      identifier: record.identifier,
+      category: record.category || 'saved',
+      variant: record.variant || 'default',
+      isOwner: true,
+      isServerTemplate,
+    }
+  } else {
+    // Fork to new personal design!
+    studioState.activeRecordId = null
+    studioState.activeRecordMetadata = {
+      id: null,
+      identifier: currentPid,
+      category: 'saved',
+      variant: 'default',
+      isOwner: false,
+      isServerTemplate: false,
+      forkedFromId: record.id,
+      forkedFromTitle: record.title,
     }
   }
-}
 
-export function redoStudio() {
-  if (studioState.redoStack.length === 0) return
-  const next = studioState.redoStack.pop()
-  if (next) {
-    studioState.history.push(next)
-    studioState.composition = JSON.parse(next)
-    if (studioState.composition.layers.length > 0) {
-      studioState.activeLayerId = studioState.composition.layers[0].id
-    }
-  }
-}
+  studioState.composition = normalized
+  studioState.activeLayerId = normalized.layers.length > 0 ? normalized.layers[0].id : null
+  studioState.isDirty = false
+  resetStudioHistory()
 
-export function loadComposition(comp: GraffitiComposition) {
-  studioState.composition = JSON.parse(JSON.stringify(comp))
-  if (studioState.composition.layers.length > 0) {
-    studioState.activeLayerId = studioState.composition.layers[0].id
-  }
-  studioState.history = [JSON.stringify(studioState.composition)]
-  studioState.redoStack = []
+  return { success: true }
 }
 
 export function newComposition(title = 'New Graffiti Tag') {
-  const comp = createDefaultComposition()
-  comp.title = title
-  loadComposition(comp)
+  studioState.composition = createDefaultComposition(title)
+  studioState.activeRecordId = null
+  studioState.activeRecordMetadata = null
+  studioState.activeLayerId = studioState.composition.layers[0]?.id || null
+  studioState.isDirty = false
+  resetStudioHistory()
 }
+
+// ─── Layer Selection & Queries ────────────────────────────────────────
 
 export function getActiveLayer(): GraffitiLayer | null {
   if (!studioState.activeLayerId) {
@@ -178,8 +309,180 @@ export function selectLayer(id: string) {
   }
 }
 
+// ─── Layer Actions (Enforcing Lock Policy & Transactions) ──────────────
+
+export function addLayer(layer: GraffitiLayer): boolean {
+  return executeTransaction({
+    description: `Add layer ${layer.name}`,
+    estimatedBytes: 512,
+    apply: () => {
+      studioState.composition.layers.push(layer)
+      studioState.activeLayerId = layer.id
+      return true
+    },
+    undo: () => {
+      const idx = studioState.composition.layers.findIndex((l) => l.id === layer.id)
+      if (idx !== -1) {
+        studioState.composition.layers.splice(idx, 1)
+        studioState.activeLayerId = studioState.composition.layers[studioState.composition.layers.length - 1]?.id || null
+      }
+    },
+  })
+}
+
+export function deleteLayer(id: string): boolean {
+  const index = studioState.composition.layers.findIndex((l) => l.id === id)
+  if (index === -1) return false
+  const layer = studioState.composition.layers[index]
+  if (layer.locked) return false // Locked layers resist deletion!
+
+  return executeTransaction({
+    description: `Delete layer ${layer.name}`,
+    estimatedBytes: 512,
+    apply: () => {
+      studioState.composition.layers.splice(index, 1)
+      studioState.activeLayerId = studioState.composition.layers[Math.max(0, index - 1)]?.id || null
+      return true
+    },
+    undo: () => {
+      studioState.composition.layers.splice(index, 0, layer)
+      studioState.activeLayerId = layer.id
+    },
+  })
+}
+
+export function reorderLayer(id: string, delta: number): boolean {
+  const index = studioState.composition.layers.findIndex((l) => l.id === id)
+  if (index === -1) return false
+  const layer = studioState.composition.layers[index]
+  if (layer.locked) return false // Locked layers resist reorder
+
+  const targetIndex = index + delta
+  if (targetIndex < 0 || targetIndex >= studioState.composition.layers.length) return false
+
+  return executeTransaction({
+    description: `Reorder layer ${layer.name}`,
+    estimatedBytes: 64,
+    apply: () => {
+      const [removed] = studioState.composition.layers.splice(index, 1)
+      studioState.composition.layers.splice(targetIndex, 0, removed)
+      return true
+    },
+    undo: () => {
+      const [removed] = studioState.composition.layers.splice(targetIndex, 1)
+      studioState.composition.layers.splice(index, 0, removed)
+    },
+  })
+}
+
+export function toggleLayerLock(id: string): boolean {
+  const layer = studioState.composition.layers.find((l) => l.id === id)
+  if (!layer) return false
+
+  return executeTransaction({
+    description: `Toggle lock for ${layer.name}`,
+    estimatedBytes: 32,
+    apply: () => {
+      layer.locked = !layer.locked
+      return true
+    },
+    undo: () => {
+      layer.locked = !layer.locked
+    },
+  })
+}
+
+export function toggleLayerVisibility(id: string): boolean {
+  const layer = studioState.composition.layers.find((l) => l.id === id)
+  if (!layer) return false
+
+  return executeTransaction({
+    description: `Toggle visibility for ${layer.name}`,
+    estimatedBytes: 32,
+    apply: () => {
+      layer.visible = !layer.visible
+      return true
+    },
+    undo: () => {
+      layer.visible = !layer.visible
+    },
+  })
+}
+
+export function duplicateLayer(id: string): boolean {
+  const layer = studioState.composition.layers.find((l) => l.id === id)
+  if (!layer) return false
+
+  const copy: GraffitiLayer = JSON.parse(JSON.stringify(layer))
+  copy.id = layer.type + '_' + Math.random().toString(36).substring(2, 9)
+  copy.name = `${layer.name} (Copy)`
+  copy.locked = false // Duplicates start unlocked
+  if ('x' in copy) (copy as any).x += 20
+  if ('y' in copy) (copy as any).y += 20
+
+  const index = studioState.composition.layers.findIndex((l) => l.id === id)
+
+  return executeTransaction({
+    description: `Duplicate layer ${layer.name}`,
+    estimatedBytes: 1024,
+    apply: () => {
+      studioState.composition.layers.splice(index + 1, 0, copy)
+      studioState.activeLayerId = copy.id
+      return true
+    },
+    undo: () => {
+      const idx = studioState.composition.layers.findIndex((l) => l.id === copy.id)
+      if (idx !== -1) {
+        studioState.composition.layers.splice(idx, 1)
+        studioState.activeLayerId = layer.id
+      }
+    },
+  })
+}
+
+export function updateLayerProperty(id: string, key: string, value: any): boolean {
+  const layer = studioState.composition.layers.find((l) => l.id === id)
+  if (!layer || layer.locked) return false
+
+  const beforeVal = JSON.parse(JSON.stringify((layer as any)[key]))
+  const afterVal = JSON.parse(JSON.stringify(value))
+
+  return executeTransaction({
+    description: `Change ${key} on ${layer.name}`,
+    estimatedBytes: 128,
+    apply: () => {
+      if (layer.locked) return false
+      ;(layer as any)[key] = afterVal
+      return true
+    },
+    undo: () => {
+      ;(layer as any)[key] = beforeVal
+    },
+  })
+}
+
+export function addFreehandStroke(layerId: string, stroke: FreehandStroke): boolean {
+  const layer = studioState.composition.layers.find((l) => l.id === layerId)
+  if (!layer || layer.type !== 'freehand' || layer.locked) return false
+  const fh = layer as FreehandLayer
+
+  return executeTransaction({
+    description: 'Draw brush stroke',
+    estimatedBytes: (stroke.points?.length || 1) * 32,
+    apply: () => {
+      if (layer.locked) return false
+      fh.strokes.push(stroke)
+      return true
+    },
+    undo: () => {
+      fh.strokes.pop()
+    },
+  })
+}
+
+// ─── Add Layer Conveniences ───────────────────────────────────────────
+
 export function addTextLayer(initialText = 'PEAK') {
-  pushStudioHistory()
   const newId = 'text_' + Math.random().toString(36).substring(2, 9)
   const layer: TextLayer = {
     id: newId,
@@ -207,13 +510,11 @@ export function addTextLayer(initialText = 'PEAK') {
     spray: { enabled: true, count: 12, spread: 20 },
     distress: { enabled: false, roughness: 0 },
   }
-  studioState.composition.layers.push(layer)
-  studioState.activeLayerId = newId
+  addLayer(layer)
   studioState.activeTool = 'text'
 }
 
 export function addFreehandLayer(name = 'Freehand Spray', brushStyle: BrushStyleId = 'spray') {
-  pushStudioHistory()
   const newId = 'freehand_' + Math.random().toString(36).substring(2, 9)
   const layer: FreehandLayer = {
     id: newId,
@@ -225,13 +526,11 @@ export function addFreehandLayer(name = 'Freehand Spray', brushStyle: BrushStyle
     brushStyle,
     strokes: [],
   }
-  studioState.composition.layers.push(layer)
-  studioState.activeLayerId = newId
+  addLayer(layer)
   studioState.activeTool = 'brush'
 }
 
 export function addImageLayer(url: string, dataUrl?: string, filters?: Partial<ImageFilters>) {
-  pushStudioHistory()
   const newId = 'img_' + Math.random().toString(36).substring(2, 9)
   const layer: ImageLayer = {
     id: newId,
@@ -258,13 +557,11 @@ export function addImageLayer(url: string, dataUrl?: string, filters?: Partial<I
       removeBgThreshold: filters?.removeBgThreshold || 25,
     },
   }
-  studioState.composition.layers.push(layer)
-  studioState.activeLayerId = newId
+  addLayer(layer)
   studioState.activeTool = 'select'
 }
 
 export function addStencilLayer(stencilId: string) {
-  pushStudioHistory()
   const newId = 'stencil_' + Math.random().toString(36).substring(2, 9)
   const layer: StencilLayer = {
     id: newId,
@@ -280,57 +577,6 @@ export function addStencilLayer(stencilId: string) {
     rotation: 0,
     color: studioState.brush.color || '#D6FF62',
   }
-  studioState.composition.layers.push(layer)
-  studioState.activeLayerId = newId
+  addLayer(layer)
   studioState.activeTool = 'stencil'
-}
-
-export function reorderLayer(id: string, delta: number) {
-  const index = studioState.composition.layers.findIndex((l) => l.id === id)
-  if (index === -1) return
-  const targetIndex = index + delta
-  if (targetIndex < 0 || targetIndex >= studioState.composition.layers.length) return
-  pushStudioHistory()
-  const [removed] = studioState.composition.layers.splice(index, 1)
-  studioState.composition.layers.splice(targetIndex, 0, removed)
-}
-
-export function toggleLayerVisibility(id: string) {
-  const layer = studioState.composition.layers.find((l) => l.id === id)
-  if (layer) {
-    layer.visible = !layer.visible
-  }
-}
-
-export function toggleLayerLock(id: string) {
-  const layer = studioState.composition.layers.find((l) => l.id === id)
-  if (layer) {
-    layer.locked = !layer.locked
-  }
-}
-
-export function duplicateLayer(id: string) {
-  const layer = studioState.composition.layers.find((l) => l.id === id)
-  if (!layer) return
-  pushStudioHistory()
-  const copy: GraffitiLayer = JSON.parse(JSON.stringify(layer))
-  copy.id = layer.type + '_' + Math.random().toString(36).substring(2, 9)
-  copy.name = `${layer.name} (Copy)`
-  if ('x' in copy) (copy as any).x += 20
-  if ('y' in copy) (copy as any).y += 20
-  const index = studioState.composition.layers.findIndex((l) => l.id === id)
-  studioState.composition.layers.splice(index + 1, 0, copy)
-  studioState.activeLayerId = copy.id
-}
-
-export function deleteLayer(id: string) {
-  const index = studioState.composition.layers.findIndex((l) => l.id === id)
-  if (index === -1) return
-  pushStudioHistory()
-  studioState.composition.layers.splice(index, 1)
-  if (studioState.composition.layers.length > 0) {
-    studioState.activeLayerId = studioState.composition.layers[Math.max(0, index - 1)].id
-  } else {
-    studioState.activeLayerId = null
-  }
 }

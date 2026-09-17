@@ -193,12 +193,16 @@ function StartEraserSession()
             return
         end
 
-        if strokeData then
-            SendDuiMessage(SprayState.duiObject, json.encode({ action = "loadStrokes", strokes = strokeData }))
-            SprayState.existingStrokes = strokeData
-        else
-            SprayState.existingStrokes = {}
-        end
+        local targetDoc = SprayUtils.NormalizePaintingDocument(strokeData)
+        SprayState.targetDoc = targetDoc
+        SprayState.existingStrokes = strokeData
+        SprayState.newEraseStrokes = {}
+
+        SendDuiMessage(SprayState.duiObject, json.encode({
+            action = "loadPaintingDocument",
+            document = targetDoc,
+            strokes = strokeData
+        }))
 
         AttachClothProp()
         Peak.Client.LoadAnimDict(Config.EraseAnimation.dict)
@@ -423,20 +427,26 @@ function ValidateErase()
     if SprayState.isDrawing then EndCurrentStroke() end
     ClearPedTasks(PlayerPedId())
 
-    local allStrokes = {}
-    if SprayState.existingStrokes then
-        for _, s in ipairs(SprayState.existingStrokes) do
-            table.insert(allStrokes, s)
-        end
+    -- No-op check: If no new erase strokes were performed, do not update or consume cloth!
+    if not SprayState.strokeHistory or #SprayState.strokeHistory == 0 then
+        Peak.Client.Notify(L("eraser_cancelled") or "Cleaning finished (no changes)", "info", Config.NotifyDuration)
+        CleanupEraserSession(paintingId, false)
+        return
     end
+
+    local doc = SprayState.targetDoc or SprayUtils.NormalizePaintingDocument(SprayState.existingStrokes)
+    doc.eraseMask = doc.eraseMask or {}
     for _, s in ipairs(SprayState.strokeHistory) do
-        table.insert(allStrokes, s)
+        table.insert(doc.eraseMask, s)
     end
+
+    local totalStrokeCount = SprayUtils.CalculatePaintingStrokeCount(doc)
 
     local data = {
         paintingId = paintingId,
-        strokeData = allStrokes,
-        strokeCount = #allStrokes
+        strokeData = doc,
+        strokeCount = totalStrokeCount,
+        consumedCloth = true
     }
 
     local ok, result = pcall(function()

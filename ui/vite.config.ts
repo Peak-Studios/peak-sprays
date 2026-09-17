@@ -12,6 +12,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, 'index.html'),
         scene: resolve(__dirname, 'scene.html'),
+        canvas: resolve(__dirname, 'canvas.html'),
       },
     },
   },

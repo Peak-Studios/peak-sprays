@@ -4,7 +4,7 @@ import PaintHUD from '@/components/PaintHUD.vue'
 import SceneEditor from '@/components/SceneEditor.vue'
 import GraffitiStudio from '@/components/GraffitiStudio.vue'
 import { hudData, showHUD } from '@/store/hudState'
-import { studioState, showStudio, loadComposition } from '@/store/studioState'
+import { studioState, showStudio, openDesign } from '@/store/studioState'
 import { dispatchSceneAction, sceneState } from '@/store/sceneState'
 import { fetchNui } from '@/utils/fetchNui'
 
@@ -142,7 +142,7 @@ function onMessage(event: MessageEvent) {
     case 'openStudio':
       showStudio.value = true
       if (a.composition) {
-        loadComposition(a.composition)
+        openDesign(a.composition)
       }
       if (a.step) {
         studioState.activeStep = a.step

@@ -2,19 +2,20 @@ Peak = Peak or {}
 Peak.Server = Peak.Server or {}
 
 -- ============================================================
--- GANG HELPERS
+-- GANG HELPERS & CONFIGURABLE ADAPTERS
 -- ============================================================
 
 --- Returns player gang info { id = string, name = string, label = string, isBoss = boolean, grade = number }
 function Peak.Server.GetPlayerGang(src)
     local fw = Peak.Server.FrameworkName
     local obj = Peak.Server.FrameworkObject
+    local minBossGrade = Config.GangBossMinGrade or 3
 
     if fw == "qbcore" or fw == "qbox" then
         local player = obj.Functions.GetPlayer(src)
         if player and player.PlayerData and player.PlayerData.gang then
             local gang = player.PlayerData.gang
-            local isBoss = gang.isboss == true or (gang.grade and (gang.grade.isboss == true or (gang.grade.level and gang.grade.level >= 3)))
+            local isBoss = gang.isboss == true or (gang.grade and (gang.grade.isboss == true or (gang.grade.level and gang.grade.level >= minBossGrade)))
             return {
                 id = gang.name or "none",
                 name = gang.name or "none",
@@ -29,29 +30,219 @@ function Peak.Server.GetPlayerGang(src)
             -- Check for job2 (common secondary gang job in ESX)
             local gangJob = player.getJob2 and player.getJob2()
             if gangJob and gangJob.name and gangJob.name ~= "unemployed" then
+                local isBoss = (gangJob.grade_name and gangJob.grade_name:lower():find("boss") ~= nil) or (gangJob.grade and gangJob.grade >= minBossGrade)
                 return {
                     id = gangJob.name,
                     name = gangJob.name,
                     label = gangJob.label or gangJob.name,
-                    isBoss = (gangJob.grade_name and gangJob.grade_name:lower():find("boss")) ~= nil or gangJob.grade >= 3,
+                    isBoss = isBoss,
                     grade = gangJob.grade or 0
                 }
             end
-            -- Fallback to standard job if named gang-like
+            -- Check if primary job is in configured gang jobs
             local job = player.getJob()
             if job and job.name and job.name ~= "unemployed" then
-                return {
-                    id = job.name,
-                    name = job.name,
-                    label = job.label or job.name,
-                    isBoss = (job.grade_name and job.grade_name:lower():find("boss")) ~= nil or job.grade >= 3,
-                    grade = job.grade or 0
-                }
+                local isConfiguredGang = Config.ESXGangJobs and Config.ESXGangJobs[job.name] == true
+                if isConfiguredGang then
+                    local isBoss = (job.grade_name and job.grade_name:lower():find("boss") ~= nil) or (job.grade and job.grade >= minBossGrade)
+                    return {
+                        id = job.name,
+                        name = job.name,
+                        label = job.label or job.name,
+                        isBoss = isBoss,
+                        grade = job.grade or 0
+                    }
+                end
             end
         end
     end
 
     return { id = "none", name = "none", label = "None", isBoss = false, grade = 0 }
+end
+
+-- ============================================================
+-- CENTRALIZED DESIGN POLICIES
+-- ============================================================
+
+--- Determines if a player can view/read a design record.
+function Peak.Server.CanReadDesign(source, designRow)
+    if not designRow then return false, "Design not found" end
+    if designRow.is_server_template == 1 or designRow.category == "template" then
+        return true
+    end
+    if Peak.Server.IsAdmin(source) then
+        return true
+    end
+    local identifier = Peak.Server.GetIdentifier(source)
+    if designRow.identifier == identifier then
+        return true
+    end
+    if designRow.category == "gang" and designRow.gang_id and designRow.gang_id ~= "none" then
+        local gang = Peak.Server.GetPlayerGang(source)
+        if gang and gang.id == designRow.gang_id then
+            return true
+        end
+    end
+    return false, "Permission denied"
+end
+
+--- Determines if a player can modify/update an existing design row.
+function Peak.Server.CanEditDesign(source, designRow)
+    if not designRow then return false, "Design not found" end
+    if designRow.is_server_template == 1 then
+        if Peak.Server.IsAdmin(source) then return true end
+        return false, "Cannot modify server templates"
+    end
+    if Peak.Server.IsAdmin(source) then return true end
+    local identifier = Peak.Server.GetIdentifier(source)
+    if designRow.identifier == identifier then
+        return true
+    end
+    return false, "Permission denied"
+end
+
+--- Determines if a player can delete a design row.
+function Peak.Server.CanDeleteDesign(source, designRow)
+    return Peak.Server.CanEditDesign(source, designRow)
+end
+
+--- Determines if a player can publish an official crew/gang template.
+function Peak.Server.CanPublishGangTemplate(source, targetGangId)
+    local gang = Peak.Server.GetPlayerGang(source)
+    if not gang or gang.id == "none" then
+        return false, "You are not in a gang or crew"
+    end
+    if targetGangId and gang.id ~= targetGangId then
+        return false, "Cannot publish for another gang"
+    end
+    if not gang.isBoss and not Peak.Server.IsAdmin(source) then
+        return false, "Only gang leaders can publish official crew tags"
+    end
+    return true
+end
+
+-- ============================================================
+-- BOUNDED RECURSIVE VALIDATION
+-- ============================================================
+
+local function ExtractUrlHost(url)
+    if type(url) ~= "string" then return nil end
+    return url:match("^https://([^/%?#:]+)")
+end
+
+local function IsPrivateAddress(host)
+    if not host then return true end
+    host = host:lower()
+    if host == "localhost"
+       or host:match("^127%.")
+       or host:match("^10%.")
+       or host:match("^192%.168%.")
+       or host:match("^172%.(1[6-9]|2[0-9]|3[0-1])%.") then
+        return true
+    end
+    return false
+end
+
+local function IsAllowedImageHost(host)
+    if not host or IsPrivateAddress(host) then return false end
+    host = host:lower()
+    for _, allowed in ipairs(Config.ImageAllowedHosts or {}) do
+        allowed = tostring(allowed):lower()
+        if host == allowed or host:sub(-(allowed:len() + 1)) == "." .. allowed then
+            return true
+        end
+    end
+    return false
+end
+
+--- Recursively validates an untrusted composition document.
+function Peak.Server.ValidatePaintingComposition(comp)
+    if type(comp) ~= "table" then
+        return false, "Composition must be an object"
+    end
+
+    local width = tonumber(comp.width) or 1024
+    local height = tonumber(comp.height) or 1024
+    if width < 256 or width > 2048 or height < 256 or height > 2048 then
+        return false, "Canvas dimensions out of bounds (256 - 2048)"
+    end
+    if (width * height) > (2048 * 2048) then
+        return false, "Total canvas pixel budget exceeded"
+    end
+
+    if comp.layers ~= nil and type(comp.layers) ~= "table" then
+        return false, "Layers must be a table"
+    end
+
+    local layers = comp.layers or {}
+    local maxLayers = Config.MaxLayersPerComposition or 32
+    if #layers > maxLayers then
+        return false, ("Layer count exceeds maximum of %d"):format(maxLayers)
+    end
+
+    local imageCount = 0
+    local maxImages = Config.ImageMaxPerSpray or 5
+
+    for i, layer in ipairs(layers) do
+        if type(layer) ~= "table" then
+            return false, ("Layer %d is invalid"):format(i)
+        end
+
+        local layerType = layer.type
+        if layerType ~= "freehand" and layerType ~= "text" and layerType ~= "image" and layerType ~= "stencil" then
+            return false, ("Layer %d has unknown type: %s"):format(i, tostring(layerType))
+        end
+
+        local opacity = tonumber(layer.opacity)
+        if opacity == nil or opacity < 0.0 or opacity > 1.0 then
+            return false, ("Layer %d has invalid opacity (must be 0.0 to 1.0)"):format(i)
+        end
+
+        if layerType == "text" then
+            local text = layer.text
+            if type(text) ~= "string" or #text > 200 then
+                return false, ("Text layer %d exceeds 200 characters"):format(i)
+            end
+            local fontSize = tonumber(layer.fontSize)
+            if fontSize == nil or fontSize <= 0 or fontSize > 300 then
+                return false, ("Text layer %d has invalid font size"):format(i)
+            end
+            if type(layer.x) ~= "number" or type(layer.y) ~= "number" then
+                return false, ("Text layer %d has invalid coordinates"):format(i)
+            end
+        elseif layerType == "image" then
+            if Config.ImageSpraysEnabled ~= true then
+                return false, "Image layers are disabled on this server"
+            end
+            imageCount = imageCount + 1
+            if imageCount > maxImages then
+                return false, ("Too many image layers (max %d)"):format(maxImages)
+            end
+
+            local url = layer.url
+            if type(url) ~= "string" or #url > (Config.ImageUrlMaxLength or 512) then
+                return false, ("Image layer %d URL invalid or too long"):format(i)
+            end
+            local host = ExtractUrlHost(url)
+            if not host or not IsAllowedImageHost(host) then
+                return false, ("Image layer %d host is not permitted"):format(i)
+            end
+        elseif layerType == "freehand" then
+            local strokes = layer.strokes
+            if strokes ~= nil and type(strokes) ~= "table" then
+                return false, ("Freehand layer %d has invalid strokes"):format(i)
+            end
+            if strokes and #strokes > 100 then
+                return false, ("Freehand layer %d exceeds 100 strokes limit"):format(i)
+            end
+        elseif layerType == "stencil" then
+            if type(layer.stencilId) ~= "string" then
+                return false, ("Stencil layer %d missing stencilId"):format(i)
+            end
+        end
+    end
+
+    return true
 end
 
 -- ============================================================
@@ -247,10 +438,9 @@ local DefaultServerTemplates = {
 }
 
 local function SeedDefaultTemplates()
-    local countRes = Peak.Server.ExecuteSQL("SELECT COUNT(*) as count FROM peak_spray_designs WHERE is_server_template = 1", {})
-    local count = (countRes and countRes[1] and countRes[1].count) or 0
-    if count == 0 then
-        for _, tpl in ipairs(DefaultServerTemplates) do
+    for _, tpl in ipairs(DefaultServerTemplates) do
+        local exists = Peak.Server.ExecuteSQL("SELECT id FROM peak_spray_designs WHERE is_server_template = 1 AND title = @title", { ["@title"] = tpl.title })
+        if not exists or #exists == 0 then
             Peak.Server.InsertSQL([[
                 INSERT INTO peak_spray_designs 
                 (identifier, player_name, title, category, gang_id, variant, composition, is_server_template)
@@ -261,8 +451,8 @@ local function SeedDefaultTemplates()
                 ["@composition"] = tpl.composition
             })
         end
-        SprayUtils.DebugPrint("[Designs] Seeded default server templates")
     end
+    SprayUtils.DebugPrint("[Designs] Verified server templates")
 end
 
 CreateThread(function()
@@ -299,37 +489,45 @@ Peak.Server.RegisterCallback("peak-sprays:getDesignsLibrary", function(source)
         recent = {},
         templates = {},
         gang = {},
-        playerGang = gang
+        playerGang = gang,
+        playerIdentifier = identifier
     }
 
     for _, row in ipairs(rows) do
-        local design = {
-            id = row.id,
-            title = row.title,
-            category = row.category,
-            variant = row.variant,
-            gangId = row.gang_id,
-            playerName = row.player_name,
-            isServerTemplate = row.is_server_template == 1,
-            thumbnail = row.thumbnail,
-            createdAt = row.created_at,
-            updatedAt = row.updated_at,
-            composition = json.decode(row.composition) or {}
-        }
+        if Peak.Server.CanReadDesign(source, row) then
+            local comp = json.decode(row.composition) or {}
+            local layerCount = (comp.layers and type(comp.layers) == "table") and #comp.layers or 0
 
-        if row.is_server_template == 1 or row.category == "template" then
-            table.insert(library.templates, design)
-        elseif row.category == "draft" and row.identifier == identifier then
-            table.insert(library.drafts, design)
-        elseif row.category == "gang" then
-            table.insert(library.gang, design)
-        elseif row.category == "saved" and row.identifier == identifier then
-            table.insert(library.saved, design)
-        end
+            local design = {
+                id = row.id,
+                identifier = row.identifier,
+                playerName = row.player_name,
+                title = row.title,
+                category = row.category,
+                variant = row.variant,
+                gangId = row.gang_id,
+                isServerTemplate = row.is_server_template == 1,
+                thumbnail = row.thumbnail,
+                layerCount = layerCount,
+                createdAt = row.created_at,
+                updatedAt = row.updated_at,
+                composition = comp
+            }
 
-        -- Add to recent if created or updated recently
-        if #library.recent < 12 and (row.identifier == identifier or row.category == "gang") then
-            table.insert(library.recent, design)
+            if row.is_server_template == 1 or row.category == "template" then
+                table.insert(library.templates, design)
+            elseif row.category == "draft" and row.identifier == identifier then
+                table.insert(library.drafts, design)
+            elseif row.category == "gang" then
+                table.insert(library.gang, design)
+            elseif row.category == "saved" and row.identifier == identifier then
+                table.insert(library.saved, design)
+            end
+
+            -- Add to recent if owned or accessible gang design
+            if #library.recent < 12 and (row.identifier == identifier or row.category == "gang") then
+                table.insert(library.recent, design)
+            end
         end
     end
 
@@ -343,35 +541,55 @@ Peak.Server.RegisterCallback("peak-sprays:saveDesign", function(source, data)
 
     local identifier = Peak.Server.GetIdentifier(source)
     local playerName = Peak.Server.GetPlayerName(source)
-    local category = data.category or "saved"
-    local variant = data.variant or "default"
-    local gangId = (category == "gang") and data.gangId or nil
-    local thumbnail = data.thumbnail
 
-    local compJson = type(data.composition) == "string" and data.composition or json.encode(data.composition)
-    if #compJson > 500000 then -- 500KB cap
-        return { success = false, message = "Design composition is too large" }
+    local comp = data.composition
+    if type(comp) == "string" then
+        local ok, decoded = pcall(json.decode, comp)
+        if not ok or type(decoded) ~= "table" then
+            return { success = false, message = "Invalid JSON in composition" }
+        end
+        comp = decoded
     end
 
-    -- Update if existing ID and owned by player
+    local valid, valMsg = Peak.Server.ValidatePaintingComposition(comp)
+    if not valid then
+        return { success = false, message = valMsg or "Invalid composition" }
+    end
+
+    local compJson = json.encode(comp)
+    if #compJson > 524288 then -- 512KB cap
+        return { success = false, message = "Design composition is too large (max 512KB)" }
+    end
+
+    -- General personal saves may create/update only 'draft' or 'saved' categories
+    local requestedCategory = data.category or "saved"
+    if requestedCategory ~= "draft" and requestedCategory ~= "saved" then
+        requestedCategory = "saved"
+    end
+
+    local variant = data.variant or "default"
+    local thumbnail = data.thumbnail
+    if thumbnail and type(thumbnail) == "string" and #thumbnail > 100000 then
+        thumbnail = thumbnail:sub(1, 100000)
+    end
+
+    -- Update if existing ID and owned/permitted
     if data.id and type(data.id) == "number" and data.id > 0 then
-        local check = Peak.Server.ExecuteSQL("SELECT identifier, is_server_template FROM peak_spray_designs WHERE id = @id", { ["@id"] = data.id })
+        local check = Peak.Server.ExecuteSQL("SELECT id, identifier, category, is_server_template FROM peak_spray_designs WHERE id = @id", { ["@id"] = data.id })
         if check and check[1] then
-            if check[1].is_server_template == 1 and not Peak.Server.IsAdmin(source) then
-                return { success = false, message = "Cannot overwrite server templates" }
-            end
-            if check[1].identifier ~= identifier and not Peak.Server.IsAdmin(source) then
-                return { success = false, message = "Permission denied" }
+            local canEdit, editMsg = Peak.Server.CanEditDesign(source, check[1])
+            if not canEdit then
+                return { success = false, message = editMsg or "Permission denied" }
             end
 
             Peak.Server.UpdateSQL([[
                 UPDATE peak_spray_designs
-                SET title = @title, category = @category, variant = @variant, composition = @composition, thumbnail = @thumbnail
+                SET title = @title, category = @category, variant = @variant, composition = @composition, thumbnail = @thumbnail, updated_at = NOW()
                 WHERE id = @id
             ]], {
                 ["@id"] = data.id,
-                ["@title"] = data.title,
-                ["@category"] = category,
+                ["@title"] = data.title:sub(1, 64),
+                ["@category"] = requestedCategory,
                 ["@variant"] = variant,
                 ["@composition"] = compJson,
                 ["@thumbnail"] = thumbnail
@@ -381,16 +599,16 @@ Peak.Server.RegisterCallback("peak-sprays:saveDesign", function(source, data)
         end
     end
 
+    -- Insert new personal design
     local insertId = Peak.Server.InsertSQL([[
         INSERT INTO peak_spray_designs 
         (identifier, player_name, title, category, gang_id, variant, composition, thumbnail, is_server_template)
-        VALUES (@identifier, @player_name, @title, @category, @gang_id, @variant, @composition, @thumbnail, 0)
+        VALUES (@identifier, @player_name, @title, @category, NULL, @variant, @composition, @thumbnail, 0)
     ]], {
         ["@identifier"] = identifier,
         ["@player_name"] = playerName,
-        ["@title"] = data.title,
-        ["@category"] = category,
-        ["@gang_id"] = gangId,
+        ["@title"] = data.title:sub(1, 64),
+        ["@category"] = requestedCategory,
         ["@variant"] = variant,
         ["@composition"] = compJson,
         ["@thumbnail"] = thumbnail
@@ -408,18 +626,14 @@ Peak.Server.RegisterCallback("peak-sprays:deleteDesign", function(source, design
         return { success = false, message = "Invalid design ID" }
     end
 
-    local identifier = Peak.Server.GetIdentifier(source)
-    local check = Peak.Server.ExecuteSQL("SELECT identifier, is_server_template FROM peak_spray_designs WHERE id = @id", { ["@id"] = designId })
+    local check = Peak.Server.ExecuteSQL("SELECT id, identifier, category, is_server_template FROM peak_spray_designs WHERE id = @id", { ["@id"] = designId })
     if not check or not check[1] then
         return { success = false, message = "Design not found" }
     end
 
-    if check[1].is_server_template == 1 and not Peak.Server.IsAdmin(source) then
-        return { success = false, message = "Cannot delete server templates" }
-    end
-
-    if check[1].identifier ~= identifier and not Peak.Server.IsAdmin(source) then
-        return { success = false, message = "Permission denied" }
+    local canDelete, delMsg = Peak.Server.CanDeleteDesign(source, check[1])
+    if not canDelete then
+        return { success = false, message = delMsg or "Permission denied" }
     end
 
     Peak.Server.UpdateSQL("DELETE FROM peak_spray_designs WHERE id = @id", { ["@id"] = designId })
@@ -436,19 +650,29 @@ Peak.Server.RegisterCallback("peak-sprays:publishGangTemplate", function(source,
     end
 
     local gang = Peak.Server.GetPlayerGang(source)
-    if not gang or gang.id == "none" then
-        return { success = false, message = "You are not in a gang or crew" }
+    local canPublish, pubMsg = Peak.Server.CanPublishGangTemplate(source, gang.id)
+    if not canPublish then
+        return { success = false, message = pubMsg or "Permission denied" }
     end
 
-    if not gang.isBoss and not Peak.Server.IsAdmin(source) then
-        return { success = false, message = "Only gang leaders can publish official crew tags" }
+    local comp = data.composition
+    if type(comp) == "string" then
+        local ok, decoded = pcall(json.decode, comp)
+        if not ok or type(decoded) ~= "table" then
+            return { success = false, message = "Invalid JSON in composition" }
+        end
+        comp = decoded
+    end
+
+    local valid, valMsg = Peak.Server.ValidatePaintingComposition(comp)
+    if not valid then
+        return { success = false, message = valMsg or "Invalid composition" }
     end
 
     local identifier = Peak.Server.GetIdentifier(source)
     local playerName = Peak.Server.GetPlayerName(source)
-    local compJson = type(data.composition) == "string" and data.composition or json.encode(data.composition)
+    local compJson = json.encode(comp)
 
-    -- Save the primary official tag
     local insertId = Peak.Server.InsertSQL([[
         INSERT INTO peak_spray_designs 
         (identifier, player_name, title, category, gang_id, variant, composition, thumbnail, is_server_template)
@@ -456,7 +680,7 @@ Peak.Server.RegisterCallback("peak-sprays:publishGangTemplate", function(source,
     ]], {
         ["@identifier"] = identifier,
         ["@player_name"] = playerName,
-        ["@title"] = ("[%s] %s"):format(gang.label, data.title),
+        ["@title"] = ("[%s] %s"):format(gang.label, data.title:sub(1, 48)),
         ["@gang_id"] = gang.id,
         ["@variant"] = data.variant or "official",
         ["@composition"] = compJson,
@@ -491,16 +715,26 @@ end)
 -- ============================================================
 
 Peak.Server.RegisterCallback("peak-sprays:exportDesignJson", function(source, designId)
-    local query = "SELECT title, composition FROM peak_spray_designs WHERE id = @id"
+    if not designId or type(designId) ~= "number" then
+        return { success = false, message = "Invalid design ID" }
+    end
+
+    local query = "SELECT id, identifier, title, category, gang_id, is_server_template, composition FROM peak_spray_designs WHERE id = @id"
     local rows = Peak.Server.ExecuteSQL(query, { ["@id"] = designId })
     if not rows or not rows[1] then
         return { success = false, message = "Design not found" }
     end
 
-    local comp = json.decode(rows[1].composition) or {}
+    local row = rows[1]
+    local canRead, readMsg = Peak.Server.CanReadDesign(source, row)
+    if not canRead then
+        return { success = false, message = readMsg or "Permission denied" }
+    end
+
+    local comp = json.decode(row.composition) or {}
     local exportPayload = {
         peak_spray_format = "v1",
-        title = rows[1].title,
+        title = row.title,
         exported_by = Peak.Server.GetPlayerName(source),
         exported_at = os.time(),
         composition = comp
@@ -513,6 +747,9 @@ Peak.Server.RegisterCallback("peak-sprays:importDesignJson", function(source, js
     if type(jsonString) ~= "string" or jsonString == "" then
         return { success = false, message = "Invalid JSON data" }
     end
+    if #jsonString > 524288 then
+        return { success = false, message = "JSON payload exceeds 512KB limit" }
+    end
 
     local ok, payload = pcall(json.decode, jsonString)
     if not ok or type(payload) ~= "table" then
@@ -520,13 +757,14 @@ Peak.Server.RegisterCallback("peak-sprays:importDesignJson", function(source, js
     end
 
     local comp = payload.composition or payload
-    if not comp or (not comp.layers and not comp.strokes) then
-        return { success = false, message = "Invalid Peak Spray composition structure" }
+    local valid, valMsg = Peak.Server.ValidatePaintingComposition(comp)
+    if not valid then
+        return { success = false, message = valMsg or "Invalid composition structure" }
     end
 
     local identifier = Peak.Server.GetIdentifier(source)
     local playerName = Peak.Server.GetPlayerName(source)
-    local title = payload.title or comp.title or "Imported Design"
+    local title = (payload.title or comp.title or "Imported Design"):sub(1, 64)
 
     local insertId = Peak.Server.InsertSQL([[
         INSERT INTO peak_spray_designs 

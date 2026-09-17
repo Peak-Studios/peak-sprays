@@ -233,25 +233,29 @@ function ForceReloadPainting(id)
 end
 _G.ForceReloadPainting = ForceReloadPainting
 
--- Live Preview System
-local PreviewDui = nil
-local PreviewTxd = nil
-local PreviewTxn = nil
-local PreviewCorners = nil
-local IsPreviewing = false
-local PreviewStartTime = 0
+-- Live Preview System (Multiplayer Isolated)
+local ActivePreviews = {}
 local PreviewCounter = 5000
 
-function CleanupPreview()
-    if PreviewDui then
-        DestroyDui(PreviewDui)
-        PreviewDui = nil
+local function CleanupPreviewForPlayer(sourcePlayer)
+    local prev = ActivePreviews[sourcePlayer]
+    if prev then
+        if prev.duiObj then
+            DestroyDui(prev.duiObj)
+        end
+        ActivePreviews[sourcePlayer] = nil
     end
-    PreviewTxd = nil
-    PreviewTxn = nil
-    PreviewCorners = nil
-    IsPreviewing = false
 end
+
+local function CleanupAllPreviews()
+    for src, _ in pairs(ActivePreviews) do
+        CleanupPreviewForPlayer(src)
+    end
+end
+
+RegisterNetEvent("peak-sprays:cl:stopLivePreview", function(sourcePlayer)
+    CleanupPreviewForPlayer(sourcePlayer)
+end)
 
 RegisterNetEvent("peak-sprays:cl:livePreview", function(sourcePlayer, payload)
     if sourcePlayer == GetPlayerServerId(PlayerId()) then return end
@@ -260,92 +264,97 @@ RegisterNetEvent("peak-sprays:cl:livePreview", function(sourcePlayer, payload)
     
     local corners = SprayUtils.TableToCorners(payload.corners)
     if not corners then return end
-    
-    if not PreviewDui then
+
+    local prev = ActivePreviews[sourcePlayer]
+    if not prev then
         PreviewCounter = PreviewCounter + 1
-        PreviewTxd = "peak_spray_lp_" .. PreviewCounter .. "_d"
-        PreviewTxn = "peak_spray_lp_" .. PreviewCounter
-        
+        local txdName = "peak_spray_lp_" .. PreviewCounter .. "_d"
+        local txnName = "peak_spray_lp_" .. PreviewCounter
+
         local w = payload.width or Config.CanvasWidth
         local h = payload.height or Config.CanvasHeight
         local url = ("nui://%s/ui/dist/canvas.html?width=%d&height=%d"):format(GetCurrentResourceName(), w, h)
-        
-        PreviewDui = CreateDui(url, w, h)
-        CreateRuntimeTxd(PreviewTxd)
-        CreateRuntimeTextureFromDuiHandle(PreviewTxd, PreviewTxn, GetDuiHandle(PreviewDui))
-        
-        SetTimeout(500, function()
-            if not PreviewDui then return end
-            SendDuiMessage(PreviewDui, json.encode({
-                action = "init",
-                width = w,
-                height = h
-            }))
+
+        local duiObj = CreateDui(url, w, h)
+        local txdHandle = CreateRuntimeTxd(txdName)
+        local handle = GetDuiHandle(duiObj)
+        if handle and handle ~= "" then
+            CreateRuntimeTextureFromDuiHandle(txdHandle, txnName, handle)
+        end
+
+        prev = {
+            source = sourcePlayer,
+            duiObj = duiObj,
+            txdName = txdName,
+            txnName = txnName,
+            corners = corners,
+            startTime = GetGameTimer()
+        }
+        ActivePreviews[sourcePlayer] = prev
+
+        SetTimeout(400, function()
+            if not ActivePreviews[sourcePlayer] then return end
+            SendDuiMessage(duiObj, json.encode({ action = "init", width = w, height = h }))
             SetTimeout(100, function()
-                if not PreviewDui then return end
+                if not ActivePreviews[sourcePlayer] then return end
                 if payload.newStrokes and #payload.newStrokes > 0 then
-                    SendDuiMessage(PreviewDui, json.encode({ action = "loadStrokes", strokes = payload.newStrokes }))
+                    SendDuiMessage(duiObj, json.encode({ action = "loadStrokes", strokes = payload.newStrokes }))
                 end
                 if payload.activeStrokeUpdate then
-                    SendDuiMessage(PreviewDui, json.encode({ action = "drawStroke", stroke = payload.activeStrokeUpdate }))
+                    SendDuiMessage(duiObj, json.encode({ action = "drawStroke", stroke = payload.activeStrokeUpdate }))
                 end
-                PreviewCorners = corners
-                IsPreviewing = true
-                PreviewStartTime = GetGameTimer()
+                prev.corners = corners
+                prev.startTime = GetGameTimer()
             end)
         end)
     else
-        -- Update existing preview
+        -- Update existing preview for this specific player
         if payload.newStrokes and #payload.newStrokes > 0 then
-            SendDuiMessage(PreviewDui, json.encode({ action = "loadStrokes", strokes = payload.newStrokes, append = true }))
+            SendDuiMessage(prev.duiObj, json.encode({ action = "loadStrokes", strokes = payload.newStrokes, append = true }))
         end
-        
         if payload.activeStrokeUpdate then
-            -- Note: Our canvas JS needs to handle 'updateActivePreview' or similar
-            SendDuiMessage(PreviewDui, json.encode({ 
-                action = "updateActivePreview", 
-                stroke = payload.activeStrokeUpdate 
-            }))
+            SendDuiMessage(prev.duiObj, json.encode({ action = "drawStroke", stroke = payload.activeStrokeUpdate }))
         end
-        
-        PreviewCorners = corners
-        IsPreviewing = true
-        PreviewStartTime = GetGameTimer()
+        prev.corners = corners
+        prev.startTime = GetGameTimer()
     end
 end)
 
 CreateThread(function()
     while true do
-        if IsPreviewing and PreviewDui and PreviewCorners and PreviewTxd and PreviewTxn then
-            if GetGameTimer() - PreviewStartTime > 10000 then
-                CleanupPreview()
+        local now = GetGameTimer()
+        local count = 0
+        for src, prev in pairs(ActivePreviews) do
+            if now - prev.startTime > 10000 then
+                CleanupPreviewForPlayer(src)
             else
-                local c = PreviewCorners
-                DrawSpritePoly(
-                    c.topLeft.x, c.topLeft.y, c.topLeft.z,
-                    c.topRight.x, c.topRight.y, c.topRight.z,
-                    c.bottomRight.x, c.bottomRight.y, c.bottomRight.z,
-                    255, 255, 255, 255,
-                    PreviewTxd, PreviewTxn,
-                    0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0
-                )
-                DrawSpritePoly(
-                    c.topLeft.x, c.topLeft.y, c.topLeft.z,
-                    c.bottomRight.x, c.bottomRight.y, c.bottomRight.z,
-                    c.bottomLeft.x, c.bottomLeft.y, c.bottomLeft.z,
-                    255, 255, 255, 255,
-                    PreviewTxd, PreviewTxn,
-                    0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0
-                )
+                count = count + 1
+                local c = prev.corners
+                if c and prev.txdName and prev.txnName then
+                    DrawSpritePoly(
+                        c.topLeft.x, c.topLeft.y, c.topLeft.z,
+                        c.topRight.x, c.topRight.y, c.topRight.z,
+                        c.bottomRight.x, c.bottomRight.y, c.bottomRight.z,
+                        255, 255, 255, 255,
+                        prev.txdName, prev.txnName,
+                        0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0
+                    )
+                    DrawSpritePoly(
+                        c.topLeft.x, c.topLeft.y, c.topLeft.z,
+                        c.bottomRight.x, c.bottomRight.y, c.bottomRight.z,
+                        c.bottomLeft.x, c.bottomLeft.y, c.bottomLeft.z,
+                        255, 255, 255, 255,
+                        prev.txdName, prev.txnName,
+                        0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0
+                    )
+                end
             end
-            Wait(0)
-        else
-            Wait(500)
         end
+        Wait(count > 0 and 0 or 500)
     end
 end)
 
 AddEventHandler("onResourceStop", function(resourceName)
     if resourceName ~= GetCurrentResourceName() then return end
-    CleanupPreview()
+    CleanupAllPreviews()
 end)

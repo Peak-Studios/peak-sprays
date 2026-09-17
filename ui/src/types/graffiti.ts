@@ -33,6 +33,12 @@ export interface FreehandStroke {
   points: StrokePoint[]
 }
 
+export interface WorldEraseStroke {
+  type: 'erase' | 'world_clean'
+  size: number
+  points: StrokePoint[]
+}
+
 export interface TextOutline {
   enabled: boolean
   color: string
@@ -143,22 +149,15 @@ export interface StencilLayer extends BaseLayer {
 
 export type GraffitiLayer = FreehandLayer | TextLayer | ImageLayer | StencilLayer
 
+/** Pure editable drawing composition document */
 export interface GraffitiComposition {
-  id?: number | string
   version: string
   title: string
   width: number
   height: number
   background: 'transparent' | 'brick' | 'concrete' | 'metal' | 'wood' | 'tile' | string
   layers: GraffitiLayer[]
-  thumbnail?: string
-  category?: 'draft' | 'saved' | 'template' | 'gang'
-  variant?: string
-  gangId?: string
-  playerName?: string
-  isServerTemplate?: boolean
-  createdAt?: string
-  updatedAt?: string
+  eraseMask?: WorldEraseStroke[]
 }
 
 export interface StencilPreset {
@@ -166,17 +165,103 @@ export interface StencilPreset {
   points: { x: number; y: number }[]
 }
 
+/** Library persistence record containing metadata plus nested composition */
+export interface DesignRecord {
+  id: number
+  identifier?: string
+  playerName: string
+  title: string
+  category: 'draft' | 'saved' | 'template' | 'gang'
+  gangId?: string | null
+  variant?: string
+  isServerTemplate: boolean
+  thumbnail?: string | null
+  layerCount: number
+  createdAt?: string
+  updatedAt?: string
+  composition: GraffitiComposition
+}
+
+/** Lightweight summary for library grid listings */
+export interface DesignSummary {
+  id: number
+  identifier?: string
+  playerName: string
+  title: string
+  category: 'draft' | 'saved' | 'template' | 'gang'
+  gangId?: string | null
+  variant?: string
+  isServerTemplate: boolean
+  thumbnail?: string | null
+  layerCount: number
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface PlayerGangInfo {
+  id: string
+  name: string
+  label: string
+  isBoss: boolean
+  grade: number
+}
+
 export interface DesignLibrary {
-  drafts: GraffitiComposition[]
-  saved: GraffitiComposition[]
-  recent: GraffitiComposition[]
-  templates: GraffitiComposition[]
-  gang: GraffitiComposition[]
-  playerGang?: {
-    id: string
-    name: string
-    label: string
-    isBoss: boolean
-    grade: number
-  }
+  drafts: DesignRecord[]
+  saved: DesignRecord[]
+  recent: DesignRecord[]
+  templates: DesignRecord[]
+  gang: DesignRecord[]
+  playerGang?: PlayerGangInfo
+  playerIdentifier?: string
+}
+
+/** Server Request / Response Contracts */
+export interface SaveDesignRequest {
+  id?: number | null
+  title: string
+  category?: 'draft' | 'saved' | 'template' | 'gang'
+  variant?: string
+  composition: GraffitiComposition
+  thumbnail?: string | null
+}
+
+export interface SaveDesignResponse {
+  success: boolean
+  id?: number
+  message?: string
+}
+
+export interface DeleteDesignRequest {
+  id: number
+}
+
+export interface DeleteDesignResponse {
+  success: boolean
+  message?: string
+}
+
+export interface PublishGangTemplateRequest {
+  title: string
+  variant?: string
+  composition: GraffitiComposition
+  thumbnail?: string | null
+}
+
+export interface PublishGangTemplateResponse {
+  success: boolean
+  id?: number
+  message?: string
+}
+
+export interface ExportDesignResponse {
+  success: boolean
+  json?: string
+  message?: string
+}
+
+export interface ImportDesignResponse {
+  success: boolean
+  id?: number
+  message?: string
 }

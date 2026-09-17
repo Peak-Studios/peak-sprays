@@ -228,17 +228,70 @@ Peak.Server.RegisterCallback("peak-sprays:getStrokeData", function(source, paint
     return Peak.Server.StrokeDataCache[paintingId]
 end)
 
+local function ValidateIncomingPaintingData(strokeData)
+    if type(strokeData) ~= "table" then
+        return false, "Invalid stroke data"
+    end
+
+    -- If normalized document or layered composition
+    if strokeData.documentType == "layered" or strokeData.isComposition == true or strokeData.composition ~= nil then
+        local comp = strokeData.composition or strokeData
+        if Peak.Server.ValidatePaintingComposition then
+            local ok, msg = Peak.Server.ValidatePaintingComposition(comp)
+            if not ok then return false, msg end
+        end
+        return true
+    end
+
+    -- If legacy stroke array
+    return ValidateImageOperations(strokeData)
+end
+
 Peak.Server.RegisterCallback("peak-sprays:savePainting", function(source, data)
     if not data or not data.corners or not data.normal or not data.strokeData then
         return { success = false, message = "Invalid data" }
     end
 
-    local validImages, imageMessage = ValidateImageOperations(data.strokeData)
-    if not validImages then
-        return { success = false, message = imageMessage }
+    -- Proximity Check
+    local ped = GetPlayerPed(source)
+    local pCoords = GetEntityCoords(ped)
+    local worldPos = vector3(tonumber(data.worldX) or 0, tonumber(data.worldY) or 0, tonumber(data.worldZ) or 0)
+    local maxDist = (Config.SelectionMaxDistance or 10.0) + 5.0
+    if #(pCoords - worldPos) > maxDist then
+        return { success = false, message = "Placement position is too far from player" }
+    end
+
+    -- Geometry verification
+    local corners = data.corners
+    local tl = corners.topLeft and vector3(corners.topLeft.x or 0, corners.topLeft.y or 0, corners.topLeft.z or 0)
+    local tr = corners.topRight and vector3(corners.topRight.x or 0, corners.topRight.y or 0, corners.topRight.z or 0)
+    local bl = corners.bottomLeft and vector3(corners.bottomLeft.x or 0, corners.bottomLeft.y or 0, corners.bottomLeft.z or 0)
+    local br = corners.bottomRight and vector3(corners.bottomRight.x or 0, corners.bottomRight.y or 0, corners.bottomRight.z or 0)
+    if not tl or not tr or not bl or not br then
+        return { success = false, message = "Malformed corners geometry" }
+    end
+
+    local normal = data.normal
+    local normVec = normal and vector3(normal.x or 0, normal.y or 0, normal.z or 0)
+    if not normVec or math.abs(#normVec - 1.0) > 0.15 then
+        return { success = false, message = "Invalid surface normal vector" }
+    end
+
+    -- Stroke / Composition validation
+    local validArt, artMessage = ValidateIncomingPaintingData(data.strokeData)
+    if not validArt then
+        return { success = false, message = artMessage }
     end
     
     if not ServerCanSpray(source) then return { success = false, message = "Permission denied" } end
+
+    -- Verify item exists before proceeding
+    local itemToRemove = (data.activeItem and Config.ColoredItems[data.activeItem]) and data.activeItem or Config.SprayPaintItem
+    if Config.ConsumeSprayOnValidate then
+        if not Peak.Server.HasItem(source, itemToRemove, 1) then
+            return { success = false, message = "You do not have the required spray paint item" }
+        end
+    end
 
     local territory = Peak.Territory and Peak.Territory.ValidatePlacement(source, data) or { success = true, gangId = nil }
     if not territory or not territory.success then
@@ -248,15 +301,13 @@ Peak.Server.RegisterCallback("peak-sprays:savePainting", function(source, data)
     local identifier = Peak.Server.GetIdentifier(source)
     local playerName = Peak.Server.GetPlayerName(source)
     
-    if Config.ConsumeSprayOnValidate then
-        local itemToRemove = (data.activeItem and Config.ColoredItems[data.activeItem]) and data.activeItem or Config.SprayPaintItem
-        Peak.Server.RemoveItem(source, itemToRemove, 1)
-    end
-    
     local expiryDate = nil
     if Config.ExpiryEnabled then
         expiryDate = os.date("%Y-%m-%d %H:%M:%S", os.time() + (Config.ExpiryDays * 86400))
     end
+
+    local normalizedDoc = SprayUtils.NormalizePaintingDocument(data.strokeData)
+    local strokeCount = SprayUtils.CalculatePaintingStrokeCount(normalizedDoc)
     
     local insertId = Peak.Server.InsertSQL([[
         INSERT INTO spray_paintings 
@@ -268,35 +319,40 @@ Peak.Server.RegisterCallback("peak-sprays:savePainting", function(source, data)
         ["@gang_id"] = territory.gangId,
         ["@corners"] = json.encode(data.corners),
         ["@normal"] = json.encode(data.normal),
-        ["@stroke_data"] = json.encode(data.strokeData),
-        ["@canvas_width"] = data.canvasWidth,
-        ["@canvas_height"] = data.canvasHeight,
-        ["@world_x"] = data.worldX,
-        ["@world_y"] = data.worldY,
-        ["@world_z"] = data.worldZ,
-        ["@stroke_count"] = data.strokeCount,
+        ["@stroke_data"] = json.encode(normalizedDoc),
+        ["@canvas_width"] = data.canvasWidth or 1024,
+        ["@canvas_height"] = data.canvasHeight or 1024,
+        ["@world_x"] = worldPos.x,
+        ["@world_y"] = worldPos.y,
+        ["@world_z"] = worldPos.z,
+        ["@stroke_count"] = strokeCount,
         ["@expires_at"] = expiryDate
     })
     
     if not insertId or insertId == 0 then return { success = false, message = "DB Error" } end
     
+    -- Consume item ONLY upon confirmed database insertion
+    if Config.ConsumeSprayOnValidate then
+        Peak.Server.RemoveItem(source, itemToRemove, 1)
+    end
+
     local clientData = {
         id = insertId,
         corners = data.corners,
         normal = data.normal,
-        canvas_width = data.canvasWidth,
-        canvas_height = data.canvasHeight,
-        world_x = data.worldX,
-        world_y = data.worldY,
-        world_z = data.worldZ,
-        stroke_count = data.strokeCount,
+        canvas_width = data.canvasWidth or 1024,
+        canvas_height = data.canvasHeight or 1024,
+        world_x = worldPos.x,
+        world_y = worldPos.y,
+        world_z = worldPos.z,
+        stroke_count = strokeCount,
         gang_id = territory.gangId,
         status = "normal"
     }
     
-    -- Update in-memory cache immediately
+    -- Update in-memory caches consistently
     Peak.Server.KnownPaintingsCache[insertId] = clientData
-    Peak.Server.StrokeDataCache[insertId] = data.strokeData
+    Peak.Server.StrokeDataCache[insertId] = normalizedDoc
 
     TriggerClientEvent("peak-sprays:cl:newPainting", -1, clientData)
     LogPaintCreate(source, playerName, identifier, insertId, data)
@@ -332,12 +388,22 @@ Peak.Server.RegisterCallback("peak-sprays:updatePainting", function(source, data
         return { success = false, message = "Invalid data" }
     end
 
-    local validImages, imageMessage = ValidateImageOperations(data.strokeData)
-    if not validImages then
-        return { success = false, message = imageMessage }
+    local validArt, artMessage = ValidateIncomingPaintingData(data.strokeData)
+    if not validArt then
+        return { success = false, message = artMessage }
     end
 
     if not ServerCanErase(source) then return { success = false, message = "Permission denied" } end
+
+    -- Verify cloth item if consuming
+    if data.consumedCloth and Config.ConsumeClothOnValidate then
+        if not Peak.Server.HasItem(source, Config.ClothItem, 1) then
+            return { success = false, message = "You do not have a cleaning cloth" }
+        end
+    end
+
+    local normalizedDoc = SprayUtils.NormalizePaintingDocument(data.strokeData)
+    local strokeCount = SprayUtils.CalculatePaintingStrokeCount(normalizedDoc)
 
     local rows = Peak.Server.UpdateSQL([[
         UPDATE spray_paintings
@@ -345,20 +411,25 @@ Peak.Server.RegisterCallback("peak-sprays:updatePainting", function(source, data
         WHERE id = @id
     ]], {
         ["@id"] = data.paintingId,
-        ["@stroke_data"] = json.encode(data.strokeData),
-        ["@stroke_count"] = data.strokeCount or #data.strokeData
+        ["@stroke_data"] = json.encode(normalizedDoc),
+        ["@stroke_count"] = strokeCount
     })
 
     if rows and rows > 0 then
-        -- Update in-memory cache
-        if Peak.Server.KnownPaintingsCache[data.paintingId] then
-            Peak.Server.KnownPaintingsCache[data.paintingId].stroke_count = data.strokeCount or #data.strokeData
+        -- Consume cloth upon confirmed update
+        if data.consumedCloth and Config.ConsumeClothOnValidate then
+            Peak.Server.RemoveItem(source, Config.ClothItem, 1)
         end
-        Peak.Server.StrokeDataCache[data.paintingId] = data.strokeData
+
+        -- Update in-memory caches consistently
+        if Peak.Server.KnownPaintingsCache[data.paintingId] then
+            Peak.Server.KnownPaintingsCache[data.paintingId].stroke_count = strokeCount
+        end
+        Peak.Server.StrokeDataCache[data.paintingId] = normalizedDoc
 
         TriggerClientEvent("peak-sprays:cl:updatePainting", -1, {
             id = data.paintingId,
-            stroke_count = data.strokeCount or #data.strokeData
+            stroke_count = strokeCount
         })
 
         local playerName = Peak.Server.GetPlayerName(source)
@@ -415,11 +486,50 @@ if Config.ImportExportEnabled then
 end
 
 -- ============================================================
--- LIVE PREVIEW
+-- LIVE PREVIEW (ISOLATED & SCOPED)
 -- ============================================================
+
+local LastPreviewBroadcast = {}
 
 RegisterNetEvent("peak-sprays:sv:livePreview", function(payload)
     local src = source
     if not Config.LivePreviewEnabled then return end
-    TriggerClientEvent("peak-sprays:cl:livePreview", -1, src, payload)
+    if not payload or type(payload) ~= "table" then return end
+
+    -- Rate limit: max 10 updates per second per client
+    local now = GetGameTimer()
+    if LastPreviewBroadcast[src] and (now - LastPreviewBroadcast[src]) < 100 then
+        return
+    end
+    LastPreviewBroadcast[src] = now
+
+    local ped = GetPlayerPed(src)
+    if not ped or ped == 0 then return end
+
+    local srcBucket = GetEntityRoutingBucket(ped)
+    local srcCoords = GetEntityCoords(ped)
+    local maxDist = Config.LivePreviewDistance or 30.0
+
+    local allPlayers = GetPlayers()
+    for _, pid in ipairs(allPlayers) do
+        local targetSrc = tonumber(pid)
+        if targetSrc and targetSrc ~= src then
+            local targetPed = GetPlayerPed(targetSrc)
+            if targetPed and targetPed ~= 0 then
+                local targetBucket = GetEntityRoutingBucket(targetPed)
+                if targetBucket == srcBucket then
+                    local targetCoords = GetEntityCoords(targetPed)
+                    if #(srcCoords - targetCoords) <= maxDist then
+                        TriggerClientEvent("peak-sprays:cl:livePreview", targetSrc, src, payload)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+AddEventHandler("playerDropped", function()
+    local src = source
+    LastPreviewBroadcast[src] = nil
+    TriggerClientEvent("peak-sprays:cl:stopLivePreview", -1, src)
 end)

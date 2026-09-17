@@ -88,6 +88,14 @@ Config.DefaultPaintStyleIndex = 1
 -- Studio Commands & Configuration
 Config.StudioCommandName = 'spraystudio'
 Config.EnableStudioUI = true
+Config.MaxLayersPerComposition = 32
+Config.GangBossMinGrade = 3
+Config.ESXGangJobs = {
+    ['ballas'] = true,
+    ['families'] = true,
+    ['vagos'] = true,
+    ['marabunta'] = true
+}
 
 
 -- Drip Style Settings
