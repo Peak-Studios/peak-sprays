@@ -33,4 +33,8 @@ end, false)
 -- Broadcast event from server when an official gang template is published
 RegisterNetEvent("peak-sprays:cl:gangTemplateUpdated", function(data)
     Peak.Client.Notify(("New official gang tag published for %s: %s"):format(data.gang or "Crew", data.title or "Tag"), "info", 5000)
+    SendNUIMessage({
+        action = "refreshDesignsLibrary",
+        gang = data and data.gang
+    })
 end)

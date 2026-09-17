@@ -153,6 +153,15 @@ function onMessage(event: MessageEvent) {
       showStudio.value = false
       break
 
+    case 'refreshDesignsLibrary':
+      fetchNui('getDesignsLibrary').then((lib) => {
+        if (lib) {
+          studioState.library = lib
+          if (lib.playerIdentifier) studioState.playerIdentifier = lib.playerIdentifier
+        }
+      })
+      break
+
     case 'startSpraySound':
       startSpraySound()
       break
