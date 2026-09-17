@@ -1,7 +1,7 @@
 # Peak Sprays
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.3-blue.svg)](version.json)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](version.json)
 [![Discord](https://img.shields.io/badge/Discord-Peak_Studios-7289DA.svg)](https://discord.gg/gAqXUaVEMn)
 
 Peak Sprays is a premium open-source FiveM resource for persistent in-world spray painting, text scenes, and signs. Players can paint on DUI canvases or place styled text/sign surfaces that are saved to SQL and rendered back into the world for nearby players.
@@ -10,12 +10,19 @@ Peak Sprays is a premium open-source FiveM resource for persistent in-world spra
 
 ## Features
 
+- **Layered Graffiti Studio**: Professional typography controls, independent move/scale/rotate, custom fonts, letter spacing, chisel outlines, drip runs, splatter spray, neon glow, and distress weathering
+- **My Designs Library**: Dedicated tabs for Drafts, Saved Designs, Recent history, Server Templates, and Gang/Crew shared designs
+- **Advanced Image Importer**: Paste directly from clipboard (`Ctrl+V`), drag & drop, URL import, brightness, contrast, monochrome, blur, and automatic background removal
+- **Textured Brush Presets**: Sidewalk chalk, street crayon, marker bleed, stipple dots, rough spray, paint roller, scratched paint, airbrush, and drip runs unified with Peak physics
+- **Non-Destructive Layers**: Reorder, hide, lock, duplicate, and delete freehand, text, image, and stencil layers
+- **Gang & Crew Templates**: Official gang tag publishing with auto-generated variants (small tag, large mural, territory mark, monochrome)
+- **100% WYSIWYG Wall Preview**: Real wall textures (brick, concrete, metal, wood, tile), 3D perspective tilt, and street lighting simulator matching world DUI rendering
+- **Smart Placement Tools**: Surface normal snapping, alignment guides, rotation snapping (45°), sizing presets (small to mural), fit-to-wall auto boundary detection, and duplicate placement mode
+- **JSON Design Import/Export**: Portable composition format for sharing and server presets
+- **Polished Creation UX**: Complete flow: Choose Type → Create Design → Preview → Save Draft → Place → Paint → Publish
 - Persistent spray paintings, text scenes, and signs stored in SQL
-- DUI-based in-world canvas rendering
+- DUI-based in-world canvas rendering with memory recycling pool
 - Paint, erase, undo, redo, brush sizing, color presets, and optional color picker
-- Image-link sprays with allowlisted HTTPS hosts, placement, scale, rotate, undo, redo, and erase support
-- Scene/sign editor with fonts, colors, backgrounds, visibility modes, expiry, and live placement preview
-- Live preview while players are actively painting
 - Admin panel for listing, previewing, teleporting to, and deleting sprays, text scenes, and signs
 - Framework bridge for QBCore, Qbox, ESX, OX Core, vRP, and standalone setups
 - Usable item and command-based flows

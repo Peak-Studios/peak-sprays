@@ -73,6 +73,7 @@ local translations = {
         ['style_splatter'] = 'Splatter Spray',
         ['style_airbrush'] = 'Soft Airbrush',
         ['style_drip'] = 'Drip Style',
+        ['spray_denied'] = 'You cannot spray right now',
         ['style_stencil'] = 'Stencil Stamp',
         ['log_paint_created'] = 'Painting Created',
         ['log_paint_created_desc'] = '**%s** (%s) created a new painting',

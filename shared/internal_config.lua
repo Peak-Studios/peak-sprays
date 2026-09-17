@@ -66,17 +66,29 @@ Config.BrushSizes = {
 }
 Config.DefaultBrushSizeIndex = 1
 
--- Paint Styles
+-- Paint Styles & Textured Brush Presets
 Config.PaintStyles = {
-    { id = 'spray',       name = 'Aerosol Spray',   icon = 'spray' },
-    { id = 'pen',         name = 'Fine Marker',     icon = 'pen' },
-    { id = 'calligraphy', name = 'Calligraphy',     icon = 'marker' },
-    { id = 'splatter',    name = 'Splatter',        icon = 'tint' },
-    { id = 'airbrush',    name = 'Soft Airbrush',   icon = 'cloud' },
-    { id = 'drip',        name = 'Drip Style',      icon = 'tint' },
-    { id = 'stencil',     name = 'Stencil Stamp',   icon = 'stencil' },
+    { id = 'spray',        name = 'Aerosol Spray',    icon = 'spray',      category = 'spray' },
+    { id = 'rough_spray',  name = 'Rough Spray',      icon = 'spray',      category = 'spray' },
+    { id = 'chalk',        name = 'Sidewalk Chalk',   icon = 'pen',        category = 'textured' },
+    { id = 'crayon',       name = 'Street Crayon',    icon = 'pen',        category = 'textured' },
+    { id = 'marker_bleed', name = 'Marker Bleed',     icon = 'marker',     category = 'marker' },
+    { id = 'stipple',      name = 'Stipple Dots',     icon = 'tint',       category = 'textured' },
+    { id = 'roller',       name = 'Paint Roller',     icon = 'roller',     category = 'roller' },
+    { id = 'scratched',    name = 'Scratched Paint',  icon = 'scratch',    category = 'textured' },
+    { id = 'pen',          name = 'Fine Chisel Pen',  icon = 'pen',        category = 'marker' },
+    { id = 'calligraphy',  name = 'Calligraphy',      icon = 'marker',     category = 'marker' },
+    { id = 'splatter',     name = 'Splatter Bomb',    icon = 'tint',       category = 'spray' },
+    { id = 'airbrush',     name = 'Soft Airbrush',    icon = 'cloud',      category = 'spray' },
+    { id = 'drip',         name = 'Drip Run',         icon = 'tint',       category = 'spray' },
+    { id = 'stencil',      name = 'Stencil Stamp',    icon = 'stencil',    category = 'stencil' },
 }
 Config.DefaultPaintStyleIndex = 1
+
+-- Studio Commands & Configuration
+Config.StudioCommandName = 'spraystudio'
+Config.EnableStudioUI = true
+
 
 -- Drip Style Settings
 Config.DripThresholdMs = 350 -- Time holding still before dripping

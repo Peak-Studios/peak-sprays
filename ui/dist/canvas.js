@@ -302,6 +302,154 @@
     }
   }
 
+  function drawChalkSegment(p1, p2, size, color, pressure) {
+    const segLen = Math.hypot(p2.x - p1.x, p2.y - p1.y)
+    const steps = Math.max(1, Math.ceil(segLen / Math.max(1.5, size * 0.2)))
+    const rgb = hexToRgb(color)
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps
+      const cx = p1.x + (p2.x - p1.x) * t
+      const cy = p1.y + (p2.y - p1.y) * t
+      const grainCount = Math.max(3, Math.floor(size * 0.75 * (pressure || 0.8)))
+      for (let g = 0; g < grainCount; g++) {
+        const angle = Math.random() * Math.PI * 2
+        const dist = (Math.random() ** 0.5) * (size * 0.48)
+        const gx = cx + Math.cos(angle) * dist + (Math.random() - 0.5) * 1.5
+        const gy = cy + Math.sin(angle) * dist + (Math.random() - 0.5) * 1.5
+        const alpha = (0.25 + Math.random() * 0.55) * (pressure || 0.8)
+        const r = 0.8 + Math.random() * 1.8
+        ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`
+        ctx.fillRect(gx - r * 0.5, gy - r * 0.5, r, r)
+      }
+    }
+  }
+
+  function drawCrayonSegment(p1, p2, size, color, pressure) {
+    const rgb = hexToRgb(color)
+    ctx.save()
+    ctx.strokeStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${clamp((pressure || 0.8) * 0.75, 0.2, 0.95)})`
+    ctx.lineWidth = Math.max(2, size * 0.7)
+    ctx.lineCap = 'square'
+    ctx.beginPath()
+    ctx.moveTo(p1.x, p1.y)
+    ctx.lineTo(p2.x, p2.y)
+    ctx.stroke()
+    ctx.restore()
+    const segLen = Math.hypot(p2.x - p1.x, p2.y - p1.y)
+    const steps = Math.max(1, Math.ceil(segLen / Math.max(2, size * 0.25)))
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps
+      const cx = p1.x + (p2.x - p1.x) * t
+      const cy = p1.y + (p2.y - p1.y) * t
+      const fleckCount = Math.max(2, Math.floor(size * 0.4))
+      for (let f = 0; f < fleckCount; f++) {
+        const offset = (Math.random() - 0.5) * size * 1.1
+        ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${Math.random() * 0.65 * (pressure || 0.8)})`
+        ctx.fillRect(cx + offset, cy + (Math.random() - 0.5) * size * 0.5, 1.4, 1.4)
+      }
+    }
+  }
+
+  function drawMarkerBleedSegment(p1, p2, size, color, pressure) {
+    const rgb = hexToRgb(color)
+    ctx.save()
+    ctx.strokeStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${clamp((pressure || 0.8) * 0.92, 0.4, 1)})`
+    ctx.lineWidth = size
+    ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.moveTo(p1.x, p1.y)
+    ctx.lineTo(p2.x, p2.y)
+    ctx.stroke()
+    ctx.restore()
+    const segLen = Math.hypot(p2.x - p1.x, p2.y - p1.y)
+    const bleedSteps = Math.max(1, Math.ceil(segLen / Math.max(3, size * 0.3)))
+    for (let i = 0; i <= bleedSteps; i++) {
+      const t = i / bleedSteps
+      const cx = p1.x + (p2.x - p1.x) * t
+      const cy = p1.y + (p2.y - p1.y) * t
+      if (Math.random() < 0.45) {
+        const angle = Math.random() * Math.PI * 2
+        const dist = (size * 0.45) + Math.random() * (size * 0.35)
+        drawSoftDot(cx + Math.cos(angle) * dist, cy + Math.sin(angle) * dist, size * 0.3, color, (pressure || 0.8) * 0.35, 0.8)
+      }
+    }
+  }
+
+  function drawRollerSegment(p1, p2, size, color, pressure) {
+    const rgb = hexToRgb(color)
+    const rollerWidth = Math.max(16, size * 2.5)
+    const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x) + Math.PI / 2
+    ctx.save()
+    ctx.strokeStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${clamp((pressure || 0.8) * 0.85, 0.2, 0.95)})`
+    ctx.lineWidth = rollerWidth
+    ctx.lineCap = 'butt'
+    ctx.beginPath()
+    ctx.moveTo(p1.x, p1.y)
+    ctx.lineTo(p2.x, p2.y)
+    ctx.stroke()
+    const rX = Math.cos(angle) * (rollerWidth * 0.48)
+    const rY = Math.sin(angle) * (rollerWidth * 0.48)
+    ctx.strokeStyle = `rgba(${Math.max(0, rgb.r - 25)}, ${Math.max(0, rgb.g - 25)}, ${Math.max(0, rgb.b - 25)}, 0.45)`
+    ctx.lineWidth = Math.max(1, size * 0.2)
+    ctx.beginPath()
+    ctx.moveTo(p1.x + rX, p1.y + rY)
+    ctx.lineTo(p2.x + rX, p2.y + rY)
+    ctx.moveTo(p1.x - rX, p1.y - rY)
+    ctx.lineTo(p2.x - rX, p2.y - rY)
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  function drawScratchedSegment(p1, p2, size, color, pressure) {
+    const segLen = Math.hypot(p2.x - p1.x, p2.y - p1.y)
+    const steps = Math.max(1, Math.ceil(segLen / Math.max(2, size * 0.15)))
+    ctx.save()
+    ctx.strokeStyle = normalizeColor(color)
+    ctx.lineWidth = Math.max(1, size * 0.4)
+    ctx.lineCap = 'butt'
+    ctx.beginPath()
+    ctx.moveTo(p1.x, p1.y)
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps
+      const jitterX = (Math.random() - 0.5) * (size * 0.65)
+      const jitterY = (Math.random() - 0.5) * (size * 0.65)
+      const nx = p1.x + (p2.x - p1.x) * t + jitterX
+      const ny = p1.y + (p2.y - p1.y) * t + jitterY
+      ctx.lineTo(nx, ny)
+      if (Math.random() < 0.25) {
+        const crossLen = 2 + Math.random() * size * 0.8
+        ctx.moveTo(nx - crossLen, ny + crossLen)
+        ctx.lineTo(nx + crossLen, ny - crossLen)
+        ctx.moveTo(nx, ny)
+      }
+    }
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  function drawStippleSegment(p1, p2, size, color, pressure) {
+    const segLen = Math.hypot(p2.x - p1.x, p2.y - p1.y)
+    const steps = Math.max(1, Math.ceil(segLen / Math.max(3, size * 0.2)))
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps
+      const cx = p1.x + (p2.x - p1.x) * t
+      const cy = p1.y + (p2.y - p1.y) * t
+      drawScatter(cx, cy, size * 0.75, Math.max(4, Math.floor(10 * (pressure || 0.8))), color, pressure, 0.7, 1.8)
+    }
+  }
+
+  function drawRoughSpraySegment(p1, p2, size, color, pressure) {
+    drawLine(p1.x, p1.y, p2.x, p2.y, size * 0.7, color, (pressure || 0.8) * 0.8)
+    const segLen = Math.hypot(p2.x - p1.x, p2.y - p1.y)
+    const steps = Math.max(1, Math.ceil(segLen / Math.max(4, size * 0.25)))
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps
+      const cx = p1.x + (p2.x - p1.x) * t
+      const cy = p1.y + (p2.y - p1.y) * t
+      drawScatter(cx, cy, size * 1.35, 8, color, (pressure || 0.8) * 0.85, 0.9, 3.2)
+    }
+  }
+
   function renderStyledDot(stroke, point) {
     const style = stroke.style || 'spray'
     const size = Math.max(1, stroke.size || 10)
@@ -320,6 +468,17 @@
     } else if (style === 'airbrush') {
       drawSoftDot(point.x, point.y, size * 2.2, color, pressure, 0.45)
       drawScatter(point.x, point.y, size * 0.9, Math.ceil(density * 0.25), color, pressure * 0.25, 0.4, 1.2)
+    } else if (style === 'chalk') {
+      drawChalkSegment(point, point, size, color, pressure)
+    } else if (style === 'crayon') {
+      drawCrayonSegment(point, point, size, color, pressure)
+    } else if (style === 'marker_bleed') {
+      drawDot(point.x, point.y, size, color, pressure)
+    } else if (style === 'rough_spray') {
+      drawDot(point.x, point.y, size, color, pressure)
+      drawScatter(point.x, point.y, size * 1.2, 6, color, pressure, 0.8, 2.5)
+    } else if (style === 'stipple') {
+      drawScatter(point.x, point.y, size * 0.75, 6, color, pressure, 0.7, 1.8)
     } else if (style === 'drip') {
       drawDot(point.x, point.y, size * 0.75, color, pressure)
       drawScatter(point.x, point.y, size * 0.35, Math.ceil(density * 0.18), color, pressure * 0.25, 0.35, 1.0)
@@ -339,7 +498,21 @@
     const scatter = stroke.scatter !== undefined ? stroke.scatter : 1
     const segLen = Math.hypot(point.x - prev.x, point.y - prev.y)
 
-    if (style === 'pen') {
+    if (style === 'chalk') {
+      drawChalkSegment(prev, point, size, color, pressure)
+    } else if (style === 'crayon') {
+      drawCrayonSegment(prev, point, size, color, pressure)
+    } else if (style === 'marker_bleed') {
+      drawMarkerBleedSegment(prev, point, size, color, pressure)
+    } else if (style === 'roller') {
+      drawRollerSegment(prev, point, size, color, pressure)
+    } else if (style === 'scratched') {
+      drawScratchedSegment(prev, point, size, color, pressure)
+    } else if (style === 'stipple') {
+      drawStippleSegment(prev, point, size, color, pressure)
+    } else if (style === 'rough_spray') {
+      drawRoughSpraySegment(prev, point, size, color, pressure)
+    } else if (style === 'pen') {
       drawLine(prev.x, prev.y, point.x, point.y, size, color, pressure)
     } else if (style === 'calligraphy') {
       const a = Math.atan2(point.y - prev.y, point.x - prev.x)
@@ -530,6 +703,33 @@
           takeSnapshot()
         }
         const incoming = data.strokes || []
+        if (incoming && (incoming.layers || incoming.isComposition)) {
+          const comp = incoming.composition || incoming
+          if (comp.layers && Array.isArray(comp.layers)) {
+            ;(async () => {
+              for (const layer of comp.layers) {
+                if (layer.visible === false) continue
+                ctx.save()
+                ctx.globalAlpha = clamp(layer.opacity !== undefined ? layer.opacity : 1.0, 0, 1)
+                if (layer.type === 'freehand' && layer.strokes) {
+                  for (const s of layer.strokes) replayPaintOperation(s)
+                } else if (layer.type === 'text') {
+                  renderTextLayer(layer)
+                } else if (layer.type === 'image') {
+                  try {
+                    const img = await loadImage(layer.dataUrl || layer.url)
+                    drawImageOperation(layer, img)
+                  } catch (_) {}
+                } else if (layer.type === 'stencil') {
+                  renderStencilStamp(layer)
+                }
+                ctx.restore()
+              }
+              takeSnapshot()
+            })()
+          }
+          break
+        }
         for (let i = 0; i < incoming.length; i++) {
           strokes.push(incoming[i])
         }
@@ -654,6 +854,43 @@
         break
       }
 
+      case 'loadComposition': {
+        const comp = data.composition
+        if (!comp) break
+        ctx.clearRect(0, 0, canvasW, canvasH)
+        snapshots = []
+        strokes = []
+        redoStack = []
+        draftImage = null
+
+        if (comp.layers && Array.isArray(comp.layers)) {
+          ;(async () => {
+            for (const layer of comp.layers) {
+              if (layer.visible === false) continue
+              ctx.save()
+              ctx.globalAlpha = clamp(layer.opacity !== undefined ? layer.opacity : 1.0, 0, 1)
+              if (layer.type === 'freehand' && layer.strokes) {
+                for (const s of layer.strokes) {
+                  replayPaintOperation(s)
+                }
+              } else if (layer.type === 'text') {
+                renderTextLayer(layer)
+              } else if (layer.type === 'image') {
+                try {
+                  const img = await loadImage(layer.dataUrl || layer.url)
+                  drawImageOperation(layer, img)
+                } catch (_) {}
+              } else if (layer.type === 'stencil') {
+                renderStencilStamp(layer)
+              }
+              ctx.restore()
+            }
+            takeSnapshot()
+          })()
+        }
+        break
+      }
+
       case 'cancelImage': {
         draftImage = null
         redrawCommitted()
@@ -661,6 +898,88 @@
       }
     }
   })
+
+  function renderTextLayer(layer) {
+    if (!layer.text) return
+    ctx.save()
+    ctx.translate(layer.x, layer.y)
+    ctx.rotate((layer.rotation * Math.PI) / 180)
+    ctx.scale(layer.scale || 1.0, layer.scale || 1.0)
+    const fontStyle = layer.fontStyle === 'italic' ? 'italic ' : ''
+    const fontWeight = layer.fontWeight === 'bold' ? 'bold ' : layer.fontWeight === '900' ? '900 ' : ''
+    const fontFace = layer.font || 'Oswald'
+    const fontSize = Math.max(12, layer.fontSize || 64)
+    ctx.font = `${fontStyle}${fontWeight}${fontSize}px "${fontFace}", sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+
+    if (layer.glow && layer.glow.enabled && layer.glow.blur > 0) {
+      ctx.save()
+      ctx.shadowColor = layer.glow.color || '#D6FF62'
+      ctx.shadowBlur = layer.glow.blur * 1.5
+      ctx.fillStyle = layer.glow.color || '#D6FF62'
+      ctx.fillText(layer.text, 0, 0)
+      ctx.restore()
+    }
+
+    if (layer.shadow && layer.shadow.enabled) {
+      ctx.save()
+      ctx.shadowColor = layer.shadow.color || '#000000'
+      ctx.shadowBlur = layer.shadow.blur || 8
+      ctx.shadowOffsetX = layer.shadow.offsetX || 4
+      ctx.shadowOffsetY = layer.shadow.offsetY || 4
+      ctx.fillStyle = layer.shadow.color || '#000000'
+      ctx.fillText(layer.text, 0, 0)
+      ctx.restore()
+    }
+
+    if (layer.outline && layer.outline.enabled && layer.outline.width > 0) {
+      ctx.save()
+      ctx.strokeStyle = normalizeColor(layer.outline.color, '#000000')
+      ctx.lineWidth = layer.outline.width * 2
+      ctx.lineJoin = 'round'
+      ctx.strokeText(layer.text, 0, 0)
+      ctx.restore()
+    }
+
+    ctx.fillStyle = normalizeColor(layer.color, '#FFFFFF')
+    ctx.fillText(layer.text, 0, 0)
+
+    if (layer.drip && layer.drip.enabled && layer.drip.count > 0) {
+      const halfW = (ctx.measureText(layer.text).width || 200) * 0.45
+      const bottomY = fontSize * 0.42
+      for (let d = 0; d < layer.drip.count; d++) {
+        const dx = (d / Math.max(1, layer.drip.count - 1) - 0.5) * (halfW * 2)
+        const dlen = (layer.drip.length || 50) * (0.6 + Math.random() * 0.8)
+        ctx.strokeStyle = normalizeColor(layer.color)
+        ctx.lineWidth = Math.max(2, layer.drip.width || 4)
+        ctx.beginPath()
+        ctx.moveTo(dx, bottomY)
+        ctx.lineTo(dx, bottomY + dlen)
+        ctx.stroke()
+        drawDot(dx, bottomY + dlen, (layer.drip.width || 4) * 1.5, layer.color, 1.0)
+      }
+    }
+    ctx.restore()
+  }
+
+  function renderStencilStamp(layer) {
+    const points = layer.points || []
+    if (points.length === 0) return
+    ctx.save()
+    ctx.translate(layer.x, layer.y)
+    ctx.rotate(((layer.rotation || 0) * Math.PI) / 180)
+    const size = layer.size || 50
+    ctx.fillStyle = normalizeColor(layer.color, '#D6FF62')
+    ctx.beginPath()
+    ctx.moveTo(points[0].x * (size / 10), points[0].y * (size / 10))
+    for (let i = 1; i < points.length; i++) {
+      ctx.lineTo(points[i].x * (size / 10), points[i].y * (size / 10))
+    }
+    ctx.closePath()
+    ctx.fill()
+    ctx.restore()
+  }
 
   canvas.width = canvasW
   canvas.height = canvasH

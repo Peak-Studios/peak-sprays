@@ -86,7 +86,11 @@ if Config.UseItem then
 
         SprayState.activeItem = itemName
         local color = Config.ColoredItems[itemName]
-        StartSelectionMode(color)
+        if Config.EnableStudioUI ~= false and Peak.Studio and Peak.Studio.Open then
+            Peak.Studio.Open("library")
+        else
+            StartSelectionMode(color)
+        end
     end)
 
     RegisterNetEvent("peak-sprays:useCloth", function()
@@ -96,7 +100,7 @@ if Config.UseItem then
 end
 
 if Config.UseCommand then
-    RegisterCommand(Config.CommandName, function()
+    RegisterCommand(Config.CommandName, function(_, args)
         if SprayState.mode ~= "idle" then return end
 
         if not Peak.Client.TriggerCallback("peak-sprays:hasSprayItem") then
@@ -104,7 +108,13 @@ if Config.UseCommand then
             return
         end
         SprayState.activeItem = nil
-        StartSelectionMode(nil)
+        if args and args[1] == "freehand" then
+            StartSelectionMode(nil)
+        elseif Config.EnableStudioUI ~= false and Peak.Studio and Peak.Studio.Open then
+            Peak.Studio.Open("library")
+        else
+            StartSelectionMode(nil)
+        end
     end, false)
 
     RegisterCommand(Config.EraseCommandName, function()

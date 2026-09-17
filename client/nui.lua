@@ -139,3 +139,63 @@ end)
 RegisterNUICallback("getLocale", function(_, cb)
     cb({ lang = "en" })
 end)
+
+-- ============================================================
+-- GRAFFITI STUDIO NUI CALLBACKS
+-- ============================================================
+
+RegisterNUICallback("getDesignsLibrary", function(_, cb)
+    local lib = Peak.Client.TriggerCallback("peak-sprays:getDesignsLibrary")
+    cb(lib or {})
+end)
+
+RegisterNUICallback("saveDesign", function(data, cb)
+    local res = Peak.Client.TriggerCallback("peak-sprays:saveDesign", data)
+    cb(res or { success = false })
+end)
+
+RegisterNUICallback("deleteDesign", function(data, cb)
+    local id = data and (data.id or data)
+    local res = Peak.Client.TriggerCallback("peak-sprays:deleteDesign", id)
+    cb(res or { success = false })
+end)
+
+RegisterNUICallback("publishGangTemplate", function(data, cb)
+    local res = Peak.Client.TriggerCallback("peak-sprays:publishGangTemplate", data)
+    cb(res or { success = false })
+end)
+
+RegisterNUICallback("exportDesignJson", function(data, cb)
+    local id = data and (data.id or data)
+    local res = Peak.Client.TriggerCallback("peak-sprays:exportDesignJson", id)
+    cb(res or { success = false })
+end)
+
+RegisterNUICallback("importDesignJson", function(data, cb)
+    local jsonStr = data and (data.json or data)
+    local res = Peak.Client.TriggerCallback("peak-sprays:importDesignJson", jsonStr)
+    cb(res or { success = false })
+end)
+
+RegisterNUICallback("startDesignPlacement", function(data, cb)
+    SetNuiFocus(false, false)
+    SetNuiFocusKeepInput(false)
+    if StartSmartPlacement then
+        StartSmartPlacement(data.composition, data.presetSize, data.duplicateMode)
+    end
+    cb({ success = true })
+end)
+
+RegisterNUICallback("closeStudio", function(_, cb)
+    SetNuiFocus(false, false)
+    SetNuiFocusKeepInput(false)
+    cb({ success = true })
+end)
+
+RegisterNUICallback("notify", function(data, cb)
+    if data and data.text then
+        Peak.Client.Notify(data.text, data.type or "info", Config.NotifyDuration)
+    end
+    cb({ success = true })
+end)
+

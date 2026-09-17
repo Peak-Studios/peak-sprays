@@ -2,7 +2,9 @@
 import { onMounted, onUnmounted } from 'vue'
 import PaintHUD from '@/components/PaintHUD.vue'
 import SceneEditor from '@/components/SceneEditor.vue'
+import GraffitiStudio from '@/components/GraffitiStudio.vue'
 import { hudData, showHUD } from '@/store/hudState'
+import { studioState, showStudio, loadComposition } from '@/store/studioState'
 import { dispatchSceneAction, sceneState } from '@/store/sceneState'
 import { fetchNui } from '@/utils/fetchNui'
 
@@ -137,6 +139,20 @@ function onMessage(event: MessageEvent) {
       hudData.activeImage = a.image || null
       break
 
+    case 'openStudio':
+      showStudio.value = true
+      if (a.composition) {
+        loadComposition(a.composition)
+      }
+      if (a.step) {
+        studioState.activeStep = a.step
+      }
+      break
+
+    case 'closeStudio':
+      showStudio.value = false
+      break
+
     case 'startSpraySound':
       startSpraySound()
       break
@@ -152,6 +168,14 @@ function onKeyEvent(e: KeyboardEvent) {
   const isEscape = e.key === 'Escape' || e.code === 'Escape' || e.keyCode === 27
   const isEnter  = e.key === 'Enter'  || e.code === 'Enter'  || e.keyCode === 13
   const isAlt    = e.key === 'Alt'    || e.code === 'AltLeft' || e.code === 'AltRight' || e.keyCode === 18
+
+  if (showStudio.value && e.type === 'keydown' && !e.repeat && isEscape) {
+    e.preventDefault()
+    e.stopPropagation()
+    showStudio.value = false
+    fetchNui('closeStudio')
+    return
+  }
 
   if (sceneState.visible && e.type === 'keydown' && !e.repeat) {
     if (isEscape) {
@@ -197,5 +221,6 @@ onUnmounted(() => {
   <div class="w-full h-full relative">
     <PaintHUD v-if="showHUD.value" />
     <SceneEditor />
+    <GraffitiStudio />
   </div>
 </template>
